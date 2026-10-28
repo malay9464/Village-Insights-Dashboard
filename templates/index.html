@@ -101,8 +101,8 @@
       <div class="filter-heading"><span>FILTER VIEW</span><button id="reset-filters" type="button">Reset</button></div>
       <label>Taluka<select id="taluka-filter"><option value="All">All talukas</option></select></label>
       <label>Village<select id="village-filter"><option value="All">All villages</option></select></label>
-      <label>Main crop <small>(agriculture & explorer)</small><select id="crop-filter"><option value="All">All crops</option></select></label>
-      <div class="filter-foot" id="filter-status" role="status" aria-live="polite">Taluka and village scope all summaries. Crop only scopes agriculture, employment and explorer rows.</div>
+      <label id="crop-filter-group" class="hidden">Main crop<select id="crop-filter"><option value="All">All crops</option></select></label>
+      <div class="filter-foot" id="filter-status" role="status" aria-live="polite">Taluka and village scope all summaries.</div>
     </section>
     <div id="dashboard-loading" class="loading-line hidden" role="status" aria-live="polite">Updating results…</div>
 

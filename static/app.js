@@ -176,7 +176,7 @@ function pageQuery(){
   params.set("view",currentPage);
   if($("#taluka-filter").value!=="All")params.set("taluka",$("#taluka-filter").value);
   if($("#village-filter").value!=="All")params.set("village",$("#village-filter").value);
-  if($("#crop-filter").value!=="All")params.set("crop",$("#crop-filter").value);
+  if(currentPage==="agriculture" && $("#crop-filter").value!=="All")params.set("crop",$("#crop-filter").value);
   if(currentPage==="explorer"){
     if($("#table-search").value.trim())params.set("search",$("#table-search").value.trim());
     params.set("sort",$("#sort-field").value||"Village_Name");
@@ -197,13 +197,13 @@ async function restoreFromUrl(){
   await refreshVillageOptions();
   const village=params.get("village")||"All";
   $("#village-filter").value=[...$("#village-filter").options].some(option=>option.value===village)?village:"All";
-  const crop=params.get("crop")||"All";
+  const view=pages.has(params.get("view"))?params.get("view"):"overview";
+  const crop=view==="agriculture"?(params.get("crop")||"All"):"All";
   $("#crop-filter").value=[...$("#crop-filter").options].some(option=>option.value===crop)?crop:"All";
   $("#table-search").value=params.get("search")||"";
   const direction=params.get("direction");if(direction)$("#sort-direction").value=direction;
   const sort=params.get("sort");if(sort && [...$("#sort-field").options].some(option=>option.value===sort))$("#sort-field").value=sort;
   const cols=params.get("columns");if(cols)selectColumns(cols.split(","));
-  const view=pages.has(params.get("view"))?params.get("view"):"overview";
   showPage(view,false);
 }
 
@@ -264,7 +264,7 @@ function filterParams(includeSearch=false){
   const params=new URLSearchParams();
   if($("#taluka-filter").value!=="All")params.set("taluka",$("#taluka-filter").value);
   if($("#village-filter").value!=="All")params.set("village",$("#village-filter").value);
-  if($("#crop-filter").value!=="All")params.set("crop",$("#crop-filter").value);
+  if(currentPage==="agriculture" && $("#crop-filter").value!=="All")params.set("crop",$("#crop-filter").value);
   if(includeSearch && $("#table-search").value.trim())params.set("search",$("#table-search").value.trim());
   return params;
 }
@@ -285,7 +285,7 @@ function setLoading(loading){
   $("#dashboard-loading").classList.toggle("hidden",!loading);
   $("#app-screen").setAttribute("aria-busy",String(loading));
   if(loading)setText("#filter-status","Updating the selected summaries…");
-  else setText("#filter-status","Taluka and village scope all summaries. Crop only scopes agriculture, employment and explorer rows.");
+  else setText("#filter-status",currentPage==="agriculture"?"Taluka, village and crop scope agriculture and employment summaries.":"Taluka and village scope dashboard summaries.");
 }
 
 function setTakeaways(data){
@@ -564,11 +564,21 @@ $("#next-page").addEventListener("click",()=>{explorerPage++;loadVillages();});
 
 function showPage(page,updateHistory=true){
   if(!pages.has(page))page="overview";
-  const changed=currentPage!==page;currentPage=page;
+  const previousPage=currentPage,changed=previousPage!==page;
+  const leavingAgriculture=previousPage==="agriculture"&&page!=="agriculture";
+  if(leavingAgriculture)$("#crop-filter").value="All";
+  currentPage=page;
+  const hideFilterBar=["about","methodology","explorer"].includes(page);
+  $("#filterbar").classList.toggle("hidden",hideFilterBar);
+  $("#mobile-filter-toggle").classList.toggle("hidden",hideFilterBar);
+  $("#crop-filter-group").classList.toggle("hidden",page!=="agriculture");
+  $("#filterbar").classList.toggle("agriculture-filters",page==="agriculture");
+  $("#filterbar").classList.toggle("geographic-filters",!hideFilterBar&&page!=="agriculture");
   $$(".nav-item").forEach(button=>button.classList.toggle("active",button.dataset.page===page));
   $$(".content").forEach(section=>section.classList.toggle("hidden",section.id!==`page-${page}`));
   setText("#topbar-title",titles[page]);setText("#breadcrumb-page",page.replaceAll("-"," ").toUpperCase());
   if(updateHistory)syncUrl(changed);
+  if(leavingAgriculture&&updateHistory&&sessionActive)loadDashboard();
   if(page==="explorer")loadVillages();
   requestAnimationFrame(()=>Object.values(charts).forEach(chart=>chart.resize()));
   if(innerWidth<760){$("#filterbar").classList.remove("open");$("#mobile-filter-toggle").setAttribute("aria-expanded","false");}
