@@ -1,274 +1,595 @@
-const $ = (s) => document.querySelector(s);
-const $$ = (s) => [...document.querySelectorAll(s)];
+const $ = (selector, root=document) => root.querySelector(selector);
+const $$ = (selector, root=document) => [...root.querySelectorAll(selector)];
+const numberFormat = new Intl.NumberFormat("en-IN", {maximumFractionDigits:0});
 let charts = {};
 let currentPage = "overview";
-let latestRows = [];
-let explorerPage = 1;
-const explorerPageSize = 25;
+let sessionActive = false;
 let csrfToken = "";
+let lastDashboard = null;
+let dashboardController = null;
+let explorerController = null;
+let filterController = null;
 let dashboardRequestId = 0;
 let explorerRequestId = 0;
-let villageOptionsRequestId = 0;
+let filterRequestId = 0;
+let explorerPage = 1;
+const pageSize = 25;
+let metadata = null;
+let selectedColumns = [];
+const defaultColumns = ["Village_Name","Taluka","Population_Total","Households","Literacy_Rate_Percent","Households_Internet_Percent","Main_Crop","Health_Facility_Available","Household_Poverty_Rate_Percent","Year"];
+const pages = new Set(["overview","people","services","agriculture","explorer","methodology","about"]);
+const titles = {overview:"District overview",people:"Population",services:"Education & infrastructure",agriculture:"Agriculture & employment",explorer:"Data explorer",methodology:"Methodology",about:"About"};
+const baseColor = "#176b50";
+const compareColor = "#cf7654";
+const categoryColors = ["#176b50","#cf7654","#b28a35","#6689a0","#7d9464","#8c6e9b","#4c9a9a","#a85e70"];
 
 function toast(message, isError=false) {
-  const el = $("#toast");
-  el.textContent = message;
-  el.className = "toast show" + (isError ? " error" : "");
+  const el=$("#toast");
+  el.textContent=message;
+  el.className="toast show"+(isError?" error":"");
+  el.setAttribute("role",isError?"alert":"status");
+  el.setAttribute("aria-live",isError?"assertive":"polite");
   clearTimeout(toast.timer);
-  toast.timer = setTimeout(() => el.className = "toast", 3400);
+  toast.timer=setTimeout(()=>el.className="toast",isError?8500:4500);
 }
-async function api(url, options={}) {
-  const res = await fetch(url, {credentials:"same-origin", ...options, headers:{"Content-Type":"application/json", ...(csrfToken ? {"X-CSRF-Token":csrfToken} : {}), ...(options.headers||{})}});
-  const data = res.headers.get("content-type")?.includes("application/json") ? await res.json() : res;
-  if (!res.ok) throw new Error(data.error || "Something went wrong.");
-  return data;
-}
-function setAuthMode(mode) {
-  $("#login-form").classList.toggle("hidden", mode !== "login");
-  $("#signup-form").classList.toggle("hidden", mode !== "signup");
-  $("#forgot-form").classList.toggle("hidden", mode !== "forgot");
-  $("#auth-tabs").classList.toggle("hidden", mode === "forgot");
-  $$(".auth-tab").forEach(b => b.classList.toggle("active", b.dataset.mode === mode));
-  if (mode === "login") {
-    $("#auth-eyebrow").textContent = "YOUR WORKSPACE";
-    $("#auth-title").textContent = "Welcome back.";
-    $("#auth-subtitle").textContent = "Sign in to explore village-level insights.";
-  } else if (mode === "signup") {
-    $("#auth-eyebrow").textContent = "GET STARTED";
-    $("#auth-title").textContent = "Create your account.";
-    $("#auth-subtitle").textContent = "Your own space for exploring the data.";
-  } else {
-    $("#auth-eyebrow").textContent = "ACCOUNT RECOVERY";
-    $("#auth-title").textContent = "Reset your password.";
-    $("#auth-subtitle").textContent = "Use your Login ID and recovery code.";
-  }
-}
-$$(".auth-tab").forEach(btn => btn.addEventListener("click", () => setAuthMode(btn.dataset.mode)));
-$("#forgot-link").addEventListener("click", () => setAuthMode("forgot"));
-$("#back-login").addEventListener("click", () => setAuthMode("login"));
 
-$("#signup-form").addEventListener("submit", async (e) => {
-  e.preventDefault();
-  const form = e.currentTarget;
-  const f = new FormData(form);
-  try {
-    const result = await api("/api/signup", {method:"POST", body:JSON.stringify(Object.fromEntries(f.entries()))});
-    toast(result.message);
-    form.reset();
-    setAuthMode("login");
-  } catch(err) { toast(err.message, true); }
-});
-$("#login-form").addEventListener("submit", async (e) => {
-  e.preventDefault();
-  const f = new FormData(e.currentTarget);
-  try {
-    const result = await api("/api/login", {method:"POST", body:JSON.stringify(Object.fromEntries(f.entries()))});
-    csrfToken=result.csrf_token||csrfToken;
-    toast("Welcome, " + result.user);
-    await enterApp(result);
-  } catch(err) { toast(err.message, true); }
-});
-$("#forgot-form").addEventListener("submit", async (e) => {
-  e.preventDefault();
-  const form = e.currentTarget;
-  const f = new FormData(form);
-  try {
-    const result = await api("/api/forgot-password", {method:"POST", body:JSON.stringify(Object.fromEntries(f.entries()))});
-    toast(result.message);
-    form.reset();
-    setAuthMode("login");
-  } catch(err) { toast(err.message, true); }
-});
-$("#logout-btn").addEventListener("click", async () => {
-  try { await api("/api/logout", {method:"POST", body:"{}"}); } catch(e) {}
-  try { csrfToken=(await api("/api/session")).csrf_token||""; } catch(e) { csrfToken=""; }
-  Object.values(charts).forEach(c => c.destroy());
-  charts = {};
+function sessionExpired() {
+  if(!sessionActive)return;
+  sessionActive=false;
+  Object.values(charts).forEach(chart=>chart.destroy());
+  charts={};
   $("#app-screen").classList.add("hidden");
   $("#auth-screen").classList.remove("hidden");
   setAuthMode("login");
+  toast("Your session expired. Please sign in again.",true);
+}
+
+async function api(url, options={}) {
+  const headers={...(options.headers||{})};
+  if(options.method && options.method!=="GET")headers["Content-Type"]="application/json";
+  if(csrfToken && options.method && options.method!=="GET")headers["X-CSRF-Token"]=csrfToken;
+  const res=await fetch(url,{credentials:"same-origin",...options,headers});
+  const isJson=res.headers.get("content-type")?.includes("application/json");
+  const data=isJson?await res.json():res;
+  if(!res.ok){
+    let expired=false;
+    if(res.status===401 && sessionActive && !["/api/login","/api/signup","/api/forgot-password"].some(p=>url.startsWith(p))){sessionExpired();expired=true;}
+    const error=new Error(data.error||"Something went wrong.");
+    error.status=res.status;error.field=data.field||"";error.expired=expired;
+    throw error;
+  }
+  return data;
+}
+
+function setAuthMode(mode){
+  $("#login-form").classList.toggle("hidden",mode!=="login");
+  $("#signup-form").classList.toggle("hidden",mode!=="signup");
+  $("#forgot-form").classList.toggle("hidden",mode!=="forgot");
+  $("#auth-tabs").classList.toggle("hidden",mode==="forgot");
+  if(mode==="login"){
+    $("#auth-eyebrow").textContent="YOUR WORKSPACE";$("#auth-title").textContent="Welcome back.";
+    $("#auth-subtitle").textContent="Sign in, or explore the synthetic dataset as a guest.";
+  }else if(mode==="signup"){
+    $("#auth-eyebrow").textContent="GET STARTED";$("#auth-title").textContent="Create your account.";
+    $("#auth-subtitle").textContent="A private workspace for exploring the data.";
+  }else{
+    $("#auth-eyebrow").textContent="ACCOUNT RECOVERY";$("#auth-title").textContent="Reset your password.";
+    $("#auth-subtitle").textContent="Use the recovery code saved during registration.";
+  }
+}
+
+function fieldErrorElement(form,field){
+  const suffix=field==="full_name"?"name":field;
+  return $$(".field-error",form).find(el=>el.id.endsWith("-"+suffix+"-error"));
+}
+function clearErrors(form){
+  $$(".field-error",form).forEach(el=>{el.textContent="";el.classList.add("hidden");});
+  $$("[aria-invalid=true]",form).forEach(el=>el.removeAttribute("aria-invalid"));
+}
+function showFieldError(form,field,message){
+  const input=field?form.elements.namedItem(field):null;
+  if(input && input.id){
+    input.setAttribute("aria-invalid","true");
+    const target=fieldErrorElement(form,field);
+    if(target){target.textContent=message;target.classList.remove("hidden");input.focus();return;}
+  }
+  toast(message,true);
+}
+function formBusy(form,busy,workingText="Working…"){
+  const button=$("button[type=submit]",form);
+  if(!button)return;
+  if(busy){button.dataset.originalText=button.textContent.trim();button.textContent=workingText;button.disabled=true;}
+  else{button.textContent=button.dataset.originalText||button.textContent;button.disabled=false;}
+}
+
+$$(".auth-tab").forEach(button=>button.addEventListener("click",()=>setAuthMode(button.dataset.mode)));
+$("#forgot-link").addEventListener("click",()=>setAuthMode("forgot"));
+$("#back-login").addEventListener("click",()=>setAuthMode("login"));
+$$('input').forEach(input=>input.addEventListener("input",()=>{
+  input.removeAttribute("aria-invalid");
+  const err=input.form?fieldErrorElement(input.form,input.name):null;
+  if(err){err.textContent="";err.classList.add("hidden");}
+}));
+$("body").addEventListener("click",event=>{
+  const button=event.target.closest(".password-toggle");if(!button)return;
+  const input=$("#"+CSS.escape(button.dataset.target));if(!input)return;
+  const visible=input.type==="password";input.type=visible?"text":"password";
+  button.textContent=visible?"Hide":"Show";button.setAttribute("aria-label",visible?"Hide password":"Show password");button.setAttribute("aria-pressed",String(visible));
 });
-async function enterApp(user) {
-  $("#auth-screen").classList.add("hidden");
-  $("#app-screen").classList.remove("hidden");
-  $("#user-name").textContent = user.user || "User";
-  $("#user-id").textContent = "@" + (user.username || "user");
-  $("#user-avatar").textContent = (user.user || "U").trim().charAt(0).toUpperCase();
-  await loadFilters();
-  await loadDashboard();
-  showPage("overview");
+
+$("#signup-form").addEventListener("submit",async event=>{
+  event.preventDefault();const form=event.currentTarget;clearErrors(form);formBusy(form,true,"Creating account…");
+  try{
+    const result=await api("/api/signup",{method:"POST",body:JSON.stringify(Object.fromEntries(new FormData(form).entries()))});
+    form.reset();$("#generated-recovery-code").textContent=result.recovery_code;
+    $("#recovery-dialog").showModal();
+  }catch(error){if(!error.expired)showFieldError(form,error.field,error.message);}
+  finally{formBusy(form,false);}
+});
+$("#recovery-continue").addEventListener("click",()=>{
+  $("#recovery-dialog").close();$("#generated-recovery-code").textContent="";setAuthMode("login");
+  toast("Account created. Sign in with your new Login ID.");
+});
+$("#copy-recovery").addEventListener("click",async()=>{
+  const code=$("#generated-recovery-code").textContent;
+  try{await navigator.clipboard.writeText(code);toast("Recovery code copied.");}
+  catch{const range=document.createRange();range.selectNodeContents($("#generated-recovery-code"));const selection=getSelection();selection.removeAllRanges();selection.addRange(range);toast("Select and copy the highlighted recovery code.",true);}
+});
+$("#download-recovery").addEventListener("click",()=>{
+  const code=$("#generated-recovery-code").textContent;
+  const link=document.createElement("a");link.href=URL.createObjectURL(new Blob([`Sabarkantha Village Insights recovery code\n\n${code}\n\nKeep this code private. It is shown only once.\n`],{type:"text/plain"}));
+  link.download="sabarkantha-recovery-code.txt";link.click();URL.revokeObjectURL(link.href);toast("Recovery code downloaded.");
+});
+$("#login-form").addEventListener("submit",async event=>{
+  event.preventDefault();const form=event.currentTarget;clearErrors(form);formBusy(form,true,"Signing in…");
+  try{const user=await api("/api/login",{method:"POST",body:JSON.stringify(Object.fromEntries(new FormData(form).entries()))});csrfToken=user.csrf_token||csrfToken;sessionActive=true;await enterApp(user);}
+  catch(error){if(!error.expired)showFieldError(form,error.field,error.message);}
+  finally{formBusy(form,false);}
+});
+$("#guest-button").addEventListener("click",async event=>{
+  const button=event.currentTarget;button.disabled=true;
+  try{const user=await api("/api/guest",{method:"POST",body:"{}"});csrfToken=user.csrf_token||csrfToken;sessionActive=true;await enterApp({...user,guest:true});}
+  catch(error){toast(error.message,true);}
+  finally{button.disabled=false;}
+});
+$("#forgot-form").addEventListener("submit",async event=>{
+  event.preventDefault();const form=event.currentTarget;clearErrors(form);formBusy(form,true,"Resetting…");
+  try{const result=await api("/api/forgot-password",{method:"POST",body:JSON.stringify(Object.fromEntries(new FormData(form).entries()))});form.reset();setAuthMode("login");toast(result.message);}
+  catch(error){if(!error.expired)showFieldError(form,error.field,error.message);}
+  finally{formBusy(form,false);}
+});
+
+function escapeHtml(value){return String(value).replace(/[&<>"']/g,char=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;"}[char]));}
+function setText(selector,value){const el=$(selector);if(el)el.textContent=value;}
+function fmtNumber(value,digits=0){return Number(value||0).toLocaleString("en-IN",{minimumFractionDigits:digits,maximumFractionDigits:digits});}
+function fmtPercent(value){return `${fmtNumber(value,1)}%`;}
+function fmtUnit(value,unit){
+  const digits=(unit==="km²"||unit==="km"||unit==="pp")?1:0;
+  const label=unit==="pp"?"percentage points":unit;
+  return `${fmtNumber(value,digits)}${label?` ${label}`:""}`;
 }
-async function boot() {
-  try {
-    const s = await api("/api/session");
-    csrfToken=s.csrf_token||"";
-    if (s.authenticated) await enterApp({user:s.user, username:s.username});
-  } catch(e) {}
+function labelsValues(rows){return {labels:(rows||[]).map(item=>item.label),values:(rows||[]).map(item=>item.value)};}
+function sum(rows){return (rows||[]).reduce((total,row)=>total+Number(row.value||0),0);}
+
+function pageQuery(){
+  const params=new URLSearchParams();
+  params.set("view",currentPage);
+  if($("#taluka-filter").value!=="All")params.set("taluka",$("#taluka-filter").value);
+  if($("#village-filter").value!=="All")params.set("village",$("#village-filter").value);
+  if($("#crop-filter").value!=="All")params.set("crop",$("#crop-filter").value);
+  if(currentPage==="explorer"){
+    if($("#table-search").value.trim())params.set("search",$("#table-search").value.trim());
+    params.set("sort",$("#sort-field").value||"Village_Name");
+    params.set("direction",$("#sort-direction").value||"desc");
+    if(selectedColumns.length)params.set("columns",selectedColumns.join(","));
+  }
+  return params;
 }
-async function loadFilters() {
-  const f = await api("/api/filters");
-  const fill = (selector, values, firstLabel) => {
-    const el = $(selector);
-    el.innerHTML = `<option value="All">${firstLabel}</option>`;
-    values.forEach(v => el.add(new Option(v, v)));
-  };
-  fill("#year-filter", f.years, "All years");
-  fill("#taluka-filter", f.talukas, "All talukas");
-  fill("#crop-filter", f.crops, "All crops");
-  updateVillageOptions(f.villages);
-  $("#year-filter").addEventListener("change", filtersChanged);
-  $("#taluka-filter").addEventListener("change", async () => {
-    await refreshVillageOptions();
-    filtersChanged();
+function syncUrl(push=false){
+  const query=pageQuery().toString();
+  const url=location.pathname+(query?`?${query}`:"");
+  if(push)history.pushState({view:currentPage},"",url);else history.replaceState({view:currentPage},"",url);
+}
+async function restoreFromUrl(){
+  const params=new URLSearchParams(location.search);
+  const taluka=params.get("taluka")||"All";
+  $("#taluka-filter").value=[...$("#taluka-filter").options].some(option=>option.value===taluka)?taluka:"All";
+  await refreshVillageOptions();
+  const village=params.get("village")||"All";
+  $("#village-filter").value=[...$("#village-filter").options].some(option=>option.value===village)?village:"All";
+  const crop=params.get("crop")||"All";
+  $("#crop-filter").value=[...$("#crop-filter").options].some(option=>option.value===crop)?crop:"All";
+  $("#table-search").value=params.get("search")||"";
+  const direction=params.get("direction");if(direction)$("#sort-direction").value=direction;
+  const sort=params.get("sort");if(sort && [...$("#sort-field").options].some(option=>option.value===sort))$("#sort-field").value=sort;
+  const cols=params.get("columns");if(cols)selectColumns(cols.split(","));
+  const view=pages.has(params.get("view"))?params.get("view"):"overview";
+  showPage(view,false);
+}
+
+async function loadFilters(){
+  const [filtersResult,meta]=await Promise.all([api("/api/filters"),api("/api/metadata")]);
+  metadata=meta;
+  const fill=(selector,values,first)=>{const el=$(selector);el.replaceChildren(new Option(first,"All"));values.forEach(value=>el.add(new Option(value,value)));};
+  fill("#taluka-filter",filtersResult.talukas,"All talukas");
+  fill("#crop-filter",filtersResult.crops,"All crops");
+  updateVillageOptions(filtersResult.villages);
+  const select=$("#sort-field");select.replaceChildren();
+  const preferred=["Village_Name","Population_Total","Literacy_Rate_Percent","Households","Taluka","Main_Crop"];
+  [...preferred,...meta.columns.map(item=>item.key).filter(key=>!preferred.includes(key))].forEach(key=>{
+    const item=meta.columns.find(col=>col.key===key);if(item)select.add(new Option(item.label,key));
   });
-  ["#village-filter","#crop-filter"].forEach(sel => $(sel).addEventListener("change", filtersChanged));
+  selectedColumns=defaultColumns.filter(key=>meta.columns.some(item=>item.key===key));
+  renderColumnPicker(meta.columns);
 }
-function filtersChanged(){explorerPage=1;loadDashboard();}
 function updateVillageOptions(values){
-  const el=$("#village-filter"), previous=el.value;
-  el.innerHTML='<option value="All">All villages</option>';
-  values.forEach(v=>el.add(new Option(v,v)));
-  if(values.includes(previous))el.value=previous;
+  const el=$("#village-filter"),previous=el.value;
+  el.replaceChildren(new Option("All villages","All"));
+  (values||[]).forEach(value=>el.add(new Option(value,value)));
+  if((values||[]).includes(previous))el.value=previous;
 }
 async function refreshVillageOptions(){
-  const requestId=++villageOptionsRequestId;
-  const taluka=$("#taluka-filter").value;
-  const params=new URLSearchParams();
-  if(taluka!=="All")params.set("taluka",taluka);
-  const f=await api("/api/filters?"+params.toString());
-  if(requestId!==villageOptionsRequestId||taluka!==$("#taluka-filter").value)return;
-  updateVillageOptions(f.villages);
+  const id=++filterRequestId;
+  if(filterController)filterController.abort();filterController=new AbortController();
+  const taluka=$("#taluka-filter").value;const params=new URLSearchParams();if(taluka!=="All")params.set("taluka",taluka);
+  const result=await api("/api/filters?"+params.toString(),{signal:filterController.signal});
+  if(id===filterRequestId && taluka===$("#taluka-filter").value)updateVillageOptions(result.villages);
 }
-function queryString(includeSearch=false) {
-  const params = new URLSearchParams();
-  ["year","taluka","village","crop"].forEach(k => {
-    const value = $(`#${k}-filter`).value;
-    if (value !== "All") params.set(k, value);
-  });
-  if(includeSearch && $("#table-search").value.trim()) params.set("search",$("#table-search").value.trim());
-  return params.toString();
-}
-$("#reset-filters").addEventListener("click", async () => {
-  $("#year-filter").value = "All";
-  $("#taluka-filter").value = "All";
-  $("#village-filter").value = "All";
-  $("#crop-filter").value = "All";
-  await refreshVillageOptions();
-  explorerPage=1;
-  loadDashboard();
-});
-$("#mobile-filter-toggle").addEventListener("click", () => $("#filterbar").classList.toggle("open"));
 
-const chartColors = ["#267653","#e97d62","#d5ad63","#8bb9a0","#6486a2","#a4b86b","#c58caa","#6b9b94","#b7a17b","#8c9aaf"];
-function destroyChart(id) { if (charts[id]) { charts[id].destroy(); delete charts[id]; } }
-function makeChart(id, type, labels, datasets, options={}) {
-  const canvas = document.getElementById(id);
-  if (!canvas) return;
-  destroyChart(id);
-  const isHorizontal = options.horizontal;
-  const chartOptions = {
-    responsive:true, maintainAspectRatio:false, indexAxis:isHorizontal ? "y" : "x",
-    plugins:{legend:{display:options.legend ?? (type==="doughnut" || type==="pie"),position:"bottom",labels:{usePointStyle:true,boxWidth:7,padding:16,font:{family:"DM Sans",size:10},color:"#64746a"}},
-      tooltip:{backgroundColor:"#173d30",padding:11,titleFont:{family:"DM Sans",weight:"700"},bodyFont:{family:"DM Sans"}}},
-    scales: (type==="doughnut"||type==="pie") ? {} : {
-      x:{grid:{display:!isHorizontal,color:"#edf1eb"},border:{display:false},ticks:{color:"#7b887e",font:{family:"DM Sans",size:9},maxRotation:0}},
-      y:{grid:{display:isHorizontal,color:"#edf1eb"},border:{display:false},ticks:{color:"#65766b",font:{family:"DM Sans",size:9}}}
-    }
-  };
-  if (options.percent) {
-    const axis = isHorizontal ? chartOptions.scales.x : chartOptions.scales.y;
-    if (axis) { axis.beginAtZero=true; axis.max=100; axis.ticks.callback=(v)=>v+"%"; }
+function renderColumnPicker(columns){
+  const container=$("#column-options");container.replaceChildren();
+  columns.forEach(item=>{
+    const label=document.createElement("label"),input=document.createElement("input");
+    input.type="checkbox";input.value=item.key;input.checked=selectedColumns.includes(item.key);
+    input.addEventListener("change",()=>{
+      if(input.checked){if(!selectedColumns.includes(item.key))selectedColumns.push(item.key);}
+      else selectedColumns=selectedColumns.filter(key=>key!==item.key);
+      if(!selectedColumns.length){input.checked=true;selectedColumns=[item.key];}
+      updateColumnPickerSummary();explorerPage=1;syncUrl();loadVillages();
+    });
+    label.append(input,document.createTextNode(` ${item.label}`));container.append(label);
+  });
+  updateColumnPickerSummary();
+}
+function selectColumns(columns){
+  if(!metadata)return;
+  const valid=columns.filter(key=>metadata.columns.some(item=>item.key===key));
+  if(valid.length)selectedColumns=[...new Set(valid)];
+  $$("input[type=checkbox]",$("#column-options")).forEach(input=>input.checked=selectedColumns.includes(input.value));
+  updateColumnPickerSummary();
+}
+function updateColumnPickerSummary(){setText("#column-summary",`Columns (${selectedColumns.length}/${metadata?.columns.length||0})`);}
+
+function filterParams(includeSearch=false){
+  const params=new URLSearchParams();
+  if($("#taluka-filter").value!=="All")params.set("taluka",$("#taluka-filter").value);
+  if($("#village-filter").value!=="All")params.set("village",$("#village-filter").value);
+  if($("#crop-filter").value!=="All")params.set("crop",$("#crop-filter").value);
+  if(includeSearch && $("#table-search").value.trim())params.set("search",$("#table-search").value.trim());
+  return params;
+}
+function filtersChanged(){explorerPage=1;syncUrl();loadDashboard();}
+$("#taluka-filter").addEventListener("change",async()=>{try{await refreshVillageOptions();filtersChanged();}catch(error){if(error.name!=="AbortError")toast(error.message,true);}});
+$("#village-filter").addEventListener("change",filtersChanged);
+$("#crop-filter").addEventListener("change",filtersChanged);
+$("#reset-filters").addEventListener("click",async()=>{
+  $("#taluka-filter").value="All";$("#village-filter").value="All";$("#crop-filter").value="All";
+  $("#table-search").value="";explorerPage=1;
+  try{await refreshVillageOptions();syncUrl();loadDashboard();}catch(error){if(error.name!=="AbortError")toast(error.message,true);}
+});
+$("#mobile-filter-toggle").addEventListener("click",()=>{
+  const open=$("#filterbar").classList.toggle("open");$("#mobile-filter-toggle").setAttribute("aria-expanded",String(open));
+});
+
+function setLoading(loading){
+  $("#dashboard-loading").classList.toggle("hidden",!loading);
+  $("#app-screen").setAttribute("aria-busy",String(loading));
+  if(loading)setText("#filter-status","Updating the selected summaries…");
+  else setText("#filter-status","Taluka and village scope all summaries. Crop only scopes agriculture, employment and explorer rows.");
+}
+
+function setTakeaways(data){
+  const k=data.kpis,topTaluka=data.population_by_taluka[0],topVillage=data.top_villages[0],bottomVillage=data.bottom_villages[0];
+  setText("#takeaway-population-taluka",topTaluka?`${topTaluka.label} has the largest selected population (${fmtNumber(topTaluka.value)} people).`:"No population data matches this scope.");
+  setText("#takeaway-top-villages",topVillage?`${topVillage.village}, ${topVillage.taluka}: ${fmtNumber(topVillage.value)} people.`:"No matching villages.");
+  setText("#takeaway-bottom-villages",bottomVillage?`${bottomVillage.village}, ${bottomVillage.taluka}: ${fmtNumber(bottomVillage.value)} people.`:"No matching villages.");
+  setText("#takeaway-literacy-gender",`Women average ${fmtPercent(k.female_literacy)} vs men ${fmtPercent(k.male_literacy)}; gap ${fmtNumber(k.literacy_gap,1)} percentage points.`);
+  const largestGap=[...data.gender_literacy_by_taluka].sort((a,b)=>b.gap-a.gap)[0];
+  setText("#takeaway-literacy-gap",largestGap?`${largestGap.label} has the widest gap (${fmtNumber(largestGap.gap,1)} pp); district mean ${fmtNumber(k.literacy_gap,1)} pp.`:"No gap data.");
+  const smallTotal=sum(data.population_size),under1000=data.population_size.filter(row=>["1–250","251–500","501–1,000"].includes(row.label)).reduce((n,row)=>n+row.value,0);
+  setText("#takeaway-size",smallTotal?`${fmtPercent(under1000/smallTotal*100)} of selected villages have fewer than 1,001 residents.`:"No population data.");
+  setText("#takeaway-age",`Population counts sum to ${fmtNumber(sum(data.age))} people.`);
+  const utilities=[...data.utilities].sort((a,b)=>b.value-a.value),highUtility=utilities[0],lowUtility=utilities.at(-1);
+  setText("#takeaway-utilities",highUtility&&lowUtility?`${highUtility.label} is highest (${fmtPercent(highUtility.value)}); ${lowUtility.label} is lowest (${fmtPercent(lowUtility.value)}).`:"No utility data.");
+  const education=[...data.education_by_taluka].sort((a,b)=>a.attendance-b.attendance)[0];
+  setText("#takeaway-education",education?`${education.label} has lowest school attendance (${fmtPercent(education.attendance)}). Chart compares attendance and maternal access.`:"No data.");
+  const health=[...data.facility_heatmap].sort((a,b)=>(a["Health facility"]||0)-(b["Health facility"]||0))[0];
+  setText("#takeaway-heatmap",health?`${health.taluka} reports the lowest health-facility availability (${fmtPercent(health["Health facility"]||0)} of villages).`:"Facility shares by taluka.");
+  const poor=[...data.poverty_by_taluka].sort((a,b)=>b.value-a.value)[0];
+  setText("#takeaway-poverty",poor?`${poor.label} has the highest mean rate (${fmtPercent(poor.value)}).`:"No poverty data.");
+  const distant=[...data.distance_by_taluka].sort((a,b)=>b.district_km-a.district_km)[0];
+  setText("#takeaway-distance",distant?`${distant.label} has the greatest mean distance to the district centre (${fmtNumber(distant.district_km,1)} km).`:"No distance data.");
+  const largestCrop=[...data.crop_area].sort((a,b)=>b.value-a.value)[0];
+  setText("#takeaway-crops",largestCrop?`${largestCrop.label} has the largest recorded area (${fmtNumber(largestCrop.value,1)} km²).`:"No crop-area records match these filters.");
+  const irrigation=[...data.irrigation].sort((a,b)=>b.value-a.value)[0];
+  setText("#takeaway-irrigation",irrigation?`${irrigation.label} is the leading source by village area (${fmtNumber(irrigation.value,1)} km²).`:"No irrigation records.");
+  const workforce=[...data.workforce].sort((a,b)=>b.value-a.value)[0];
+  setText("#takeaway-workforce",workforce?`${workforce.label}: ${fmtNumber(workforce.value)} workers in selected crop villages.`:"No employment records.");
+  const soil=[...data.soil].sort((a,b)=>b.value-a.value)[0];
+  setText("#takeaway-soil",soil?`${soil.label} is most common in ${fmtNumber(soil.value)} selected villages.`:"No soil records.");
+}
+
+function renderKpis(data){
+  const k=data.kpis,a=data.agriculture_kpis;
+  setText("#kpi-population",fmtNumber(k.population));setText("#kpi-villages",fmtNumber(k.villages));
+  setText("#kpi-literacy-gap",`${fmtNumber(k.literacy_gap,1)} pp`);setText("#kpi-literacy",fmtPercent(k.literacy));
+  setText("#finding-health",fmtPercent(k.health_facility));setText("#finding-bank",fmtPercent(k.bank));setText("#finding-solar",fmtPercent(k.solar));
+  setText("#finding-digital-gap",`${fmtNumber(k.digital_gap,1)} pp`);setText("#finding-digital-detail",`Mobile ${fmtPercent(k.mobile)} · internet ${fmtPercent(k.internet)}`);setText("#finding-sex-ratio",fmtNumber(k.sex_ratio,1));
+  setText("#finding-sc",fmtPercent(k.sc_share));setText("#finding-st",fmtPercent(k.st_share));
+  setText("#finding-size",`${fmtNumber(k.median_population)} / ${fmtNumber(k.largest_population)}`);
+  setText("#kpi-attendance",fmtPercent(k.school_attendance));setText("#kpi-maternal",fmtPercent(k.maternal_access));setText("#kpi-poverty",fmtPercent(k.poverty));
+  setText("#agri-villages",fmtNumber(a.villages));setText("#agri-area",`${fmtNumber(a.area,1)} km²`);
+  setText("#agri-rainfall",`${fmtNumber(a.rainfall,1)} mm`);setText("#agri-workers",fmtNumber(a.workers));setText("#agri-women-work",fmtPercent(a.women_workforce));
+  $("#agri-empty").classList.toggle("hidden",a.villages>0);
+}
+
+const valueLabelsPlugin={
+  id:"valueLabels",
+  afterDatasetsDraw(chart,args,pluginOptions){
+    const ctx=chart.ctx;ctx.save();ctx.font="600 11px Segoe UI, sans-serif";ctx.fillStyle="#324c3c";
+    chart.data.datasets.forEach((dataset,index)=>{
+      const meta=chart.getDatasetMeta(index);if(meta.type!=="bar")return;
+      meta.data.forEach((element,i)=>{
+        const value=dataset.data[i];if(value==null)return;
+        const props=element.getProps(["x","y","base"],true);const text=fmtUnit(value,pluginOptions.unit||"");
+        if(chart.options.indexAxis==="y"){
+          const inside=props.x>chart.chartArea.right-48;ctx.textAlign=inside?"right":"left";ctx.textBaseline="middle";
+          ctx.fillStyle=inside?"#fff":"#324c3c";ctx.fillText(text,inside?props.x-6:props.x+6,props.y);
+        }else{ctx.textAlign="center";ctx.textBaseline="bottom";ctx.fillStyle="#324c3c";ctx.fillText(text,props.x,props.y-4);}
+      });
+    });ctx.restore();
   }
-  if (type==="doughnut"||type==="pie") chartOptions.cutout=type==="doughnut"?"66%":undefined;
-  charts[id] = new Chart(canvas, {
-    type, data:{labels,datasets:datasets.map((d,i)=>({label:d.label||"",data:d.data,backgroundColor:d.backgroundColor||((type==="line")?"#267653":chartColors),borderColor:d.borderColor||"#ffffff",borderWidth:type==="line"?2:1,borderRadius:type==="bar"?5:0,fill:false,tension:.32,pointRadius:3}))},
-    options:chartOptions
+};
+const referenceLinePlugin={
+  id:"districtReferenceLine",
+  afterDraw(chart,args,opts){
+    if(opts?.value==null||!chart.chartArea)return;
+    const horizontal=chart.options.indexAxis==="y",scale=horizontal?chart.scales.x:chart.scales.y;
+    const pixel=scale.getPixelForValue(opts.value),ctx=chart.ctx,area=chart.chartArea;
+    if(horizontal && (pixel<area.left||pixel>area.right))return;
+    if(!horizontal && (pixel<area.top||pixel>area.bottom))return;
+    ctx.save();ctx.strokeStyle="#bd684d";ctx.lineWidth=2;ctx.setLineDash([5,4]);ctx.beginPath();
+    if(horizontal){ctx.moveTo(pixel,area.top);ctx.lineTo(pixel,area.bottom);}else{ctx.moveTo(area.left,pixel);ctx.lineTo(area.right,pixel);}ctx.stroke();ctx.setLineDash([]);
+    ctx.font="600 10px Segoe UI, sans-serif";ctx.fillStyle="#8b4b36";ctx.textAlign="right";ctx.textBaseline="top";ctx.fillText(opts.label||"District mean",area.right-3,area.top+3);ctx.restore();
+  }
+};
+let pluginsRegistered=false;
+function ensurePlugins(){if(window.Chart&&!pluginsRegistered){Chart.register(valueLabelsPlugin,referenceLinePlugin);pluginsRegistered=true;}}
+function ensureFallbackNode(canvas){
+  let fallback=$(".chart-fallback",canvas.parentElement);
+  if(!fallback){fallback=document.createElement("div");fallback.className="chart-fallback hidden";fallback.setAttribute("aria-hidden","true");canvas.insertAdjacentElement("afterend",fallback);}
+  return fallback;
+}
+function chartDescription(canvas,labels,datasets,unit){
+  const card=canvas.closest(".chart-card"),title=$("h3",card)?.textContent||canvas.getAttribute("aria-label")||"Chart";
+  const altId=`${canvas.id}-text-alt`;let alt=$("#"+CSS.escape(altId));
+  if(!alt){alt=document.createElement("p");alt.id=altId;alt.className="sr-only chart-text-alt";canvas.insertAdjacentElement("afterend",alt);}
+  const rows=[];
+  labels.forEach((label,index)=>rows.push(`${label}: ${datasets.map(ds=>`${ds.label?ds.label+" " : ""}${fmtUnit(ds.data[index],unit)}`).join("; ")}`));
+  alt.textContent=`${title}. ${rows.join(". ")}`;
+  canvas.setAttribute("aria-describedby",altId);
+}
+function fallbackChart(canvas,type,labels,datasets,options){
+  const fallback=ensureFallbackNode(canvas);fallback.replaceChildren();fallback.classList.remove("hidden");canvas.classList.add("hidden");fallback.removeAttribute("aria-hidden");
+  const max=Math.max(1,...datasets.flatMap(ds=>ds.data.map(Number)));
+  labels.forEach((label,index)=>{
+    const row=document.createElement("div");row.className="fallback-row";
+    const labelEl=document.createElement("span");labelEl.className="fallback-label";labelEl.textContent=label;
+    const values=document.createElement("div");values.className="fallback-values";
+    datasets.forEach((dataset,series)=>{
+      const value=Number(dataset.data[index]||0),item=document.createElement("div");item.className="fallback-series";
+      const track=document.createElement("span");track.className="fallback-track";
+      const bar=document.createElement("span");bar.className="fallback-bar";bar.style.width=`${Math.max(value>0?1:0,value/max*100)}%`;bar.style.backgroundColor=dataset.color||baseColor;track.append(bar);
+      const text=document.createElement("span");text.className="fallback-value";text.textContent=`${dataset.label?dataset.label+": ":""}${fmtUnit(value,options.unit||"")}`;
+      item.append(track,text);values.append(item);
+    });
+    row.append(labelEl,values);fallback.append(row);
   });
 }
-function labelsValues(arr){return {labels:arr.map(x=>x.label),values:arr.map(x=>x.value)}}
-function fmtNum(n){return Number(n||0).toLocaleString("en-IN",{maximumFractionDigits:0})}
-function fmtPct(n){return Number(n||0).toFixed(1)+"%"}
-async function loadDashboard() {
+function makeChart(id,type,labels,datasets,options={}){
+  const canvas=$("#"+CSS.escape(id));if(!canvas)return;
+  if(charts[id]){charts[id].destroy();delete charts[id];}
+  chartDescription(canvas,labels,datasets,options.unit||"");
+  const fallback=ensureFallbackNode(canvas);
+  if(!window.Chart){fallbackChart(canvas,type,labels,datasets,options);return;}
+  fallback.classList.add("hidden");fallback.setAttribute("aria-hidden","true");canvas.classList.remove("hidden");ensurePlugins();
+  const horizontal=Boolean(options.horizontal),isCircle=type==="doughnut";
+  const colors=type==="doughnut"?datasets.map((_,i)=>categoryColors[i%categoryColors.length]):datasets.map(d=>d.color||baseColor);
+  const chartData={labels,datasets:datasets.map((d,i)=>({
+    label:d.label||"",data:d.data,backgroundColor:isCircle?colors[i]:colors[i],borderColor:isCircle?"#fff":colors[i],
+    borderWidth:isCircle?2:0,borderRadius:type==="bar"?5:0,barThickness:type==="bar"?18:undefined,
+    tension:.25,fill:false,pointRadius:3
+  }))};
+  const plugins={legend:{display:options.legend??(type==="doughnut"),position:"bottom",labels:{usePointStyle:true,boxWidth:8,padding:14,color:"#43584b",font:{size:12}}},
+    tooltip:{backgroundColor:"#173d30",padding:11,titleFont:{weight:"700"},callbacks:{label:context=>{
+      const val=horizontal?context.parsed.x:context.parsed.y;
+      return `${context.dataset.label?context.dataset.label+": ":""}${fmtUnit(val,options.unit||"")}`;
+    }}}};
+  if(options.reference)plugins.districtReferenceLine=options.reference;
+  const scales=isCircle?{}:{
+    x:{beginAtZero:true,grid:{color:horizontal?"#edf1eb":"transparent"},border:{display:false},ticks:{color:"#58685f",font:{size:11},callback:value=>options.unit==="%"?`${value}%`:numberFormat.format(value)}},
+    y:{beginAtZero:true,grid:{color:horizontal?"transparent":"#edf1eb"},border:{display:false},ticks:{color:"#43584b",font:{size:11}},...(options.percent&&!horizontal?{max:100}:{})}
+  };
+  if(options.percent&&horizontal)scales.x.max=100;
+  charts[id]=new Chart(canvas,{type,data:chartData,options:{responsive:true,maintainAspectRatio:false,indexAxis:horizontal?"y":"x",layout:{padding:{top:type==="bar"&&!horizontal?18:8,right:options.unit==="%"?8:42}},plugins,scales,cutout:isCircle?"63%":undefined}});
+}
+
+function renderHeatmap(rows){
+  const host=$("#facility-heatmap");host.replaceChildren();
+  const fields=[...new Set(rows.flatMap(row=>Object.keys(row).filter(key=>key!=="taluka")))];
+  if(!rows.length||!fields.length){host.textContent="No facility records match this geographic selection.";return;}
+  const table=document.createElement("table");table.className="heatmap-table";
+  const caption=document.createElement("caption");caption.textContent="Percent of village records reporting each facility by taluka";table.append(caption);
+  const thead=document.createElement("thead"),header=document.createElement("tr"),blank=document.createElement("th");blank.scope="col";blank.textContent="Taluka";header.append(blank);
+  fields.forEach(field=>{const th=document.createElement("th");th.scope="col";th.textContent=field;header.append(th);});thead.append(header);table.append(thead);
+  const tbody=document.createElement("tbody");
+  rows.forEach(row=>{const tr=document.createElement("tr"),th=document.createElement("th");th.scope="row";th.textContent=row.taluka;tr.append(th);
+    fields.forEach(field=>{const value=Number(row[field]||0),td=document.createElement("td"),alpha=.08+(value/100)*.48;td.textContent=fmtPercent(value);td.style.backgroundColor=`rgba(23,107,80,${alpha})`;td.style.color=value>=60?"#fff":"#18392c";td.title=`${row.taluka}: ${field} available in ${fmtPercent(value)} of villages`;td.setAttribute("aria-label",td.title);tr.append(td);});tbody.append(tr);});
+  table.append(tbody);host.append(table);
+}
+
+function renderCharts(data){
+  const pop=labelsValues(data.population_by_taluka);
+  makeChart("population-chart","bar",pop.labels,[{data:pop.values}],{horizontal:true,unit:"people"});
+  const top=data.top_villages||[];
+  makeChart("top-villages-chart","bar",top.map(row=>`${row.village} · ${row.taluka}`),[{data:top.map(row=>row.value),color:baseColor}],{horizontal:true,unit:"people"});
+  const bottom=data.bottom_villages||[];
+  makeChart("bottom-villages-chart","bar",bottom.map(row=>`${row.village} · ${row.taluka}`),[{data:bottom.map(row=>row.value),color:compareColor}],{horizontal:true,unit:"people"});
+  const literacy=[...(data.gender_literacy_by_taluka||[])].sort((a,b)=>b.gap-a.gap);
+  makeChart("gender-literacy-chart","bar",literacy.map(row=>row.label),[
+    {label:"Male literacy",data:literacy.map(row=>row.male),color:baseColor},
+    {label:"Female literacy",data:literacy.map(row=>row.female),color:compareColor}
+  ],{horizontal:true,unit:"%",percent:true,reference:{value:data.kpis.literacy,label:`District average ${fmtPercent(data.kpis.literacy)}`}});
+  const gaps=[...literacy].sort((a,b)=>b.gap-a.gap);
+  makeChart("literacy-gap-chart","bar",gaps.map(row=>row.label),[{data:gaps.map(row=>row.gap),color:compareColor}],{horizontal:true,unit:"pp",reference:{value:data.kpis.literacy_gap,label:`District mean ${fmtNumber(data.kpis.literacy_gap,1)} pp`}});
+  const size=labelsValues(data.population_size);
+  makeChart("population-size-chart","bar",size.labels,[{data:size.values}],{unit:"villages"});
+  const age=labelsValues(data.age);
+  makeChart("age-chart","doughnut",age.labels,[{data:age.values}],{legend:true,unit:"people"});
+  const utilities=labelsValues([...data.utilities].sort((a,b)=>b.value-a.value));
+  makeChart("utilities-chart","bar",utilities.labels,[{data:utilities.values}],{horizontal:true,unit:"%",percent:true});
+  const education=[...(data.education_by_taluka||[])].sort((a,b)=>a.attendance-b.attendance);
+  makeChart("education-chart","bar",education.map(row=>row.label),[
+    {label:"Child school attendance",data:education.map(row=>row.attendance),color:baseColor},
+    {label:"Maternal health access",data:education.map(row=>row.maternal),color:compareColor}
+  ],{horizontal:true,unit:"%",percent:true});
+  renderHeatmap(data.facility_heatmap||[]);
+  const poverty=[...(data.poverty_by_taluka||[])].sort((a,b)=>b.value-a.value);
+  makeChart("poverty-chart","bar",poverty.map(row=>row.label),[{data:poverty.map(row=>row.value),color:compareColor}],{horizontal:true,unit:"%",percent:true});
+  const distance=[...(data.distance_by_taluka||[])].sort((a,b)=>b.district_km-a.district_km);
+  makeChart("distance-chart","bar",distance.map(row=>row.label),[
+    {label:"Taluka centre",data:distance.map(row=>row.taluka_km),color:baseColor},
+    {label:"District centre",data:distance.map(row=>row.district_km),color:compareColor}
+  ],{horizontal:true,unit:"km"});
+  const crops=labelsValues(data.crop_area);
+  makeChart("crop-chart","bar",crops.labels,[{data:crops.values}],{horizontal:true,unit:"km²"});
+  const irrigation=labelsValues(data.irrigation);
+  makeChart("irrigation-chart","doughnut",irrigation.labels,[{data:irrigation.values}],{legend:true,unit:"km²"});
+  const workers=labelsValues([...data.workforce].sort((a,b)=>b.value-a.value));
+  makeChart("workforce-chart","bar",workers.labels,[{data:workers.values}],{horizontal:true,unit:"workers"});
+  const soil=labelsValues(data.soil);
+  makeChart("soil-chart","bar",soil.labels,[{data:soil.values}],{horizontal:true,unit:"villages"});
+}
+
+async function loadDashboard(){
   const requestId=++dashboardRequestId;
-  try {
-    const d = await api("/api/dashboard?"+queryString());
+  if(dashboardController)dashboardController.abort();dashboardController=new AbortController();
+  setLoading(true);
+  try{
+    const data=await api("/api/dashboard?"+filterParams().toString(),{signal:dashboardController.signal});
     if(requestId!==dashboardRequestId)return;
-    $("#kpi-population").textContent = fmtNum(d.kpis.population);
-    $("#kpi-villages").textContent = fmtNum(d.kpis.villages);
-    $("#kpi-literacy").textContent = fmtPct(d.kpis.literacy);
-    $("#kpi-internet").textContent = fmtPct(d.kpis.internet);
-    $("#people-households").textContent = fmtNum(d.kpis.households);
-    $("#people-household-size").textContent = d.kpis.household_size ? Number(d.kpis.household_size).toFixed(1) : "—";
-    $("#agri-villages").textContent = fmtNum(d.agriculture_kpis.villages);
-    $("#agri-area").textContent = fmtNum(d.agriculture_kpis.area)+" km²";
-    $("#agri-rainfall").textContent = fmtNum(d.agriculture_kpis.rainfall)+" mm";
-    $("#agri-workforce-total").textContent = fmtNum(d.agriculture_kpis.total_workers);
-    $("#agri-women-work").textContent = fmtPct(d.agriculture_kpis.women_workforce);
-    $("#agri-empty").classList.toggle("hidden",d.agriculture_kpis.villages>0);
-    let p=labelsValues(d.population_by_taluka);
-    makeChart("population-chart","bar",p.labels,[{data:p.values}],{horizontal:true,legend:false});
-    let s=labelsValues(d.services);
-    makeChart("services-chart","bar",s.labels,[{data:s.values}],{horizontal:true,legend:false,percent:true});
-    let c=labelsValues(d.crop_area);
-    makeChart("crop-chart","bar",c.labels,[{data:c.values}],{horizontal:true,legend:false});
-    let l=labelsValues(d.literacy_by_taluka);
-    makeChart("literacy-chart","bar",l.labels,[{data:l.values}],{horizontal:true,legend:false});
-    let g=labelsValues(d.gender);
-    makeChart("gender-chart","doughnut",g.labels,[{data:g.values}],{legend:true});
-    let a=labelsValues(d.age);
-    makeChart("age-chart","doughnut",a.labels,[{data:a.values}],{legend:true});
-    let h=labelsValues(d.households_by_taluka);
-    makeChart("households-chart","bar",h.labels,[{data:h.values}],{horizontal:true,legend:false});
-    makeChart("people-literacy-chart","bar",l.labels,[{data:l.values}],{horizontal:true,legend:false});
-    makeChart("services-detail-chart","bar",s.labels,[{data:s.values}],{horizontal:true,legend:false,percent:true});
-    makeChart("agri-crop-chart","bar",c.labels,[{data:c.values}],{horizontal:true,legend:false});
-    let irr=labelsValues(d.irrigation);
-    makeChart("irrigation-chart","doughnut",irr.labels,[{data:irr.values}],{legend:true});
-    let w=labelsValues(d.workforce);
-    makeChart("agri-workforce-chart","bar",w.labels,[{data:w.values}],{horizontal:true,legend:false});
-    if (currentPage==="explorer") loadVillages();
-  } catch(e) { if(requestId===dashboardRequestId)toast(e.message, true); }
+    lastDashboard=data;renderKpis(data);setTakeaways(data);renderCharts(data);
+    if(currentPage==="explorer")loadVillages();
+  }catch(error){if(error.name!=="AbortError"&&requestId===dashboardRequestId)toast(error.message,true);}
+  finally{if(requestId===dashboardRequestId)setLoading(false);}
 }
-async function loadVillages() {
+
+function renderColumnCell(value,key){
+  if(value===null||value===undefined)return "<span class=\"muted-cell\">—</span>";
+  const isFlag=/_Available$|_Connected$/.test(key);
+  if(isFlag && (value===0||value===1))return `<span class="value-badge ${value?"yes":"no"}">${value?"Yes":"No"}</span>`;
+  if(typeof value==="number"){
+    if(/Percent$/.test(key))return `${fmtNumber(value,1)}%`;
+    if(/Latitude|Longitude/.test(key))return fmtNumber(value,4);
+    if(Number.isInteger(value))return fmtNumber(value);
+    return fmtNumber(value,1);
+  }
+  return escapeHtml(value);
+}
+function explorerParams({includeColumns=true,includeSearch=true}={}){
+  const params=filterParams(includeSearch);
+  params.set("page",String(explorerPage));params.set("per_page",String(pageSize));
+  params.set("sort",$("#sort-field").value||"Village_Name");params.set("direction",$("#sort-direction").value||"desc");
+  if(includeColumns)params.set("columns",selectedColumns.join(","));
+  return params;
+}
+function updateExportLink(){
+  const params=filterParams(true);
+  if($("#export-mode").value==="visible")params.set("columns",selectedColumns.join(","));
+  $("#export-link").href="/api/export?"+params.toString();
+}
+async function loadVillages(){
   const requestId=++explorerRequestId;
-  try {
-    const params = new URLSearchParams(queryString(true));
-    params.set("page", explorerPage);
-    params.set("per_page", explorerPageSize);
-    params.set("sort", $("#sort-field").value);
-    params.set("direction", $("#sort-direction").value);
-    const d = await api("/api/villages?"+params.toString());
+  if(explorerController)explorerController.abort();explorerController=new AbortController();
+  try{
+    const data=await api("/api/villages?"+explorerParams().toString(),{signal:explorerController.signal});
     if(requestId!==explorerRequestId)return;
-    latestRows = d.rows || [];
-    $("#table-count").textContent = `${fmtNum(d.total)} matching village records · ${fmtNum(latestRows.length)} on this page`;
-    const columns = latestRows.length ? Object.keys(latestRows[0]) : ["Village","Taluka","Year","Population","Households","Literacy (%)","Internet access (%)","Main crop","Health facility"];
-    $("#table-head").innerHTML = "<tr>"+columns.map(c=>`<th>${escapeHtml(c)}</th>`).join("")+"</tr>";
-    $("#table-body").innerHTML = latestRows.length ? latestRows.map(row=>"<tr>"+columns.map(c=>`<td>${escapeHtml(row[c]===null||row[c]===undefined?"—":String(row[c]))}</td>`).join("")+"</tr>").join("") : `<tr><td colspan="${columns.length}" class="empty-cell">No records match these filters. Try resetting a filter or changing your search.</td></tr>`;
-    $("#page-label").textContent=`Page ${d.page} of ${d.pages}`;
-    $("#prev-page").disabled=d.page<=1;
-    $("#next-page").disabled=d.page>=d.pages;
-    $("#export-link").href="/api/export?"+queryString(true);
-  } catch(e) { if(requestId===explorerRequestId)toast(e.message,true); }
+    setText("#table-count",`${fmtNumber(data.total)} matching records · ${fmtNumber(data.rows.length)} on this page`);
+    const head=$("#table-head");head.replaceChildren();const row=document.createElement("tr");
+    data.columns.forEach(column=>{const th=document.createElement("th");th.scope="col";th.textContent=column.label;row.append(th);});head.append(row);
+    const body=$("#table-body");body.replaceChildren();
+    if(!data.rows.length){const tr=document.createElement("tr"),td=document.createElement("td");td.colSpan=Math.max(1,data.columns.length);td.className="empty-cell";td.textContent="No village records match. Adjust the filters or search term.";tr.append(td);body.append(tr);}
+    else data.rows.forEach(record=>{const tr=document.createElement("tr");data.columns.forEach(column=>{const td=document.createElement("td");td.innerHTML=renderColumnCell(record[column.key],column.key);tr.append(td);});body.append(tr);});
+    setText("#page-label",`Page ${fmtNumber(data.page)} of ${fmtNumber(data.pages)}`);
+    $("#prev-page").disabled=data.page<=1;$("#next-page").disabled=data.page>=data.pages;
+    updateExportLink();
+  }catch(error){if(error.name!=="AbortError"&&requestId===explorerRequestId)toast(error.message,true);}
 }
-function escapeHtml(v){return String(v).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;"}[c]));}
 let searchTimer;
-$("#table-search").addEventListener("input",()=>{clearTimeout(searchTimer);explorerPage=1;searchTimer=setTimeout(loadVillages,250);});
+$("#table-search").addEventListener("input",()=>{
+  clearTimeout(searchTimer);explorerPage=1;syncUrl();searchTimer=setTimeout(loadVillages,250);
+});
+$("#sort-field").addEventListener("change",()=>{explorerPage=1;syncUrl();loadVillages();});
+$("#sort-direction").addEventListener("change",()=>{explorerPage=1;syncUrl();loadVillages();});
+$("#export-mode").addEventListener("change",()=>{syncUrl();updateExportLink();});
 $("#prev-page").addEventListener("click",()=>{if(explorerPage>1){explorerPage--;loadVillages();}});
 $("#next-page").addEventListener("click",()=>{explorerPage++;loadVillages();});
-$("#sort-field").addEventListener("change",()=>{explorerPage=1;loadVillages();});
-$("#sort-direction").addEventListener("change",()=>{explorerPage=1;loadVillages();});
-function showPage(page) {
-  currentPage=page;
-  $$(".nav-item").forEach(b=>b.classList.toggle("active",b.dataset.page===page));
-  $$(".content").forEach(el=>el.classList.add("hidden"));
-  $(`#page-${page}`).classList.remove("hidden");
-  const titles={overview:"Village overview",people:"People & households",services:"Education & infrastructure",agriculture:"Agriculture & work",explorer:"Data explorer",methodology:"Methodology",about:"About"};
-  $("#topbar-title").textContent=titles[page]||"Village overview";
-  $("#breadcrumb-page").textContent=page.toUpperCase();
-  if(page==="explorer") loadVillages();
-  // Charts first created in hidden panels need a resize when their panel becomes visible.
-  requestAnimationFrame(() => Object.values(charts).forEach(chart => chart.resize()));
-  if(window.innerWidth<760) $("#filterbar").classList.remove("open");
+
+function showPage(page,updateHistory=true){
+  if(!pages.has(page))page="overview";
+  const changed=currentPage!==page;currentPage=page;
+  $$(".nav-item").forEach(button=>button.classList.toggle("active",button.dataset.page===page));
+  $$(".content").forEach(section=>section.classList.toggle("hidden",section.id!==`page-${page}`));
+  setText("#topbar-title",titles[page]);setText("#breadcrumb-page",page.replaceAll("-"," ").toUpperCase());
+  if(updateHistory)syncUrl(changed);
+  if(page==="explorer")loadVillages();
+  requestAnimationFrame(()=>Object.values(charts).forEach(chart=>chart.resize()));
+  if(innerWidth<760){$("#filterbar").classList.remove("open");$("#mobile-filter-toggle").setAttribute("aria-expanded","false");}
 }
-$$(".nav-item").forEach(b=>b.addEventListener("click",()=>showPage(b.dataset.page)));
+$$('.nav-item').forEach(button=>button.addEventListener("click",()=>showPage(button.dataset.page,true)));
+window.addEventListener("popstate",async()=>{
+  if(!sessionActive)return;
+  try{await restoreFromUrl();loadDashboard();}catch(error){if(error.name!=="AbortError")toast(error.message,true);}
+});
+
+async function enterApp(user){
+  $("#auth-screen").classList.add("hidden");$("#app-screen").classList.remove("hidden");
+  setText("#user-name",user.user||"User");setText("#user-id",user.guest?"Read-only preview":`@${user.username||"user"}`);
+  setText("#user-avatar",(user.user||"U").trim().charAt(0).toUpperCase());
+  $("#guest-pill").classList.toggle("hidden",!user.guest);
+  await loadFilters();await restoreFromUrl();await loadDashboard();
+}
+$("#logout-btn").addEventListener("click",async()=>{
+  try{await api("/api/logout",{method:"POST",body:"{}"});}catch(error){}
+  sessionActive=false;csrfToken="";Object.values(charts).forEach(chart=>chart.destroy());charts={};
+  $("#app-screen").classList.add("hidden");$("#auth-screen").classList.remove("hidden");setAuthMode("login");
+});
+
+function startChartJs(){
+  if(window.Chart)return;
+  const script=document.createElement("script");script.src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.5.1/chart.umd.min.js";script.crossOrigin="anonymous";
+  script.onload=()=>{if(lastDashboard)renderCharts(lastDashboard);};
+  script.onerror=()=>{if(lastDashboard)renderCharts(lastDashboard);};
+  document.head.append(script);
+  setTimeout(()=>{if(lastDashboard&&!window.Chart)renderCharts(lastDashboard);},1800);
+}
+
+async function boot(){
+  startChartJs();
+  try{
+    const state=await api("/api/session");csrfToken=state.csrf_token||"";sessionActive=state.authenticated;
+    if(state.authenticated)await enterApp({user:state.user,username:state.username,guest:state.guest});
+    else syncUrl(false);
+  }catch(error){toast("Could not start the dashboard. Check that Flask is running and refresh.",true);}
+}
 boot();

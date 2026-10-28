@@ -22,8 +22,9 @@ class AppTests(unittest.TestCase):
         return self.client.post(path, json=payload, headers={"X-CSRF-Token": self.csrf})
 
     def signup_and_login(self):
-        response = self.post("/api/signup", {"full_name": "Test User", "username": "test_user", "password": "Password123", "confirm_password": "Password123", "recovery_code": "recover-me-123"})
+        response = self.post("/api/signup", {"full_name": "Test User", "username": "test_user", "password": "Password123", "confirm_password": "Password123"})
         self.assertEqual(response.status_code, 200, response.get_json())
+        self.recovery_code = response.get_json()["recovery_code"]
         response = self.post("/api/login", {"username": "test_user", "password": "Password123"})
         self.assertEqual(response.status_code, 200, response.get_json())
         self.csrf = response.get_json()["csrf_token"]
@@ -31,17 +32,17 @@ class AppTests(unittest.TestCase):
     def test_auth_and_recovery(self):
         self.assertEqual(self.client.get("/api/dashboard").status_code, 401)
         self.signup_and_login()
-        duplicate = self.post("/api/signup", {"full_name": "Test User", "username": "TEST_USER", "password": "Password123", "confirm_password": "Password123", "recovery_code": "recover-me-123"})
+        duplicate = self.post("/api/signup", {"full_name": "Test User", "username": "TEST_USER", "password": "Password123", "confirm_password": "Password123"})
         self.assertEqual(duplicate.status_code, 409)
         self.assertEqual(self.post("/api/logout", {}).status_code, 200)
         self.csrf = self.client.get("/api/session").get_json()["csrf_token"]
-        self.assertEqual(self.post("/api/forgot-password", {"username": "test_user", "recovery_code": "recover-me-123", "new_password": "NewPassword123"}).status_code, 200)
+        self.assertEqual(self.post("/api/forgot-password", {"username": "test_user", "recovery_code": self.recovery_code, "new_password": "NewPassword123", "confirm_password": "NewPassword123"}).status_code, 200)
         self.assertEqual(self.post("/api/login", {"username": "test_user", "password": "NewPassword123"}).status_code, 200)
 
     def test_dashboard_filters_paging_and_export(self):
         self.signup_and_login()
         filters = self.client.get("/api/filters").get_json()
-        self.assertEqual(filters["years"], [2024])
+        self.assertEqual(project.DATA["Year"].unique().tolist(), [2024])
         self.assertEqual(len(filters["villages"]), 3500)
         overview = self.client.get("/api/dashboard?year=2024").get_json()
         self.assertEqual(overview["kpis"]["villages"], 3500)
@@ -49,7 +50,7 @@ class AppTests(unittest.TestCase):
         sample = filters["villages"][0]
         page = self.client.get("/api/villages?year=2024&village=" + sample).get_json()
         self.assertEqual(page["total"], 1)
-        self.assertEqual(page["rows"][0]["Village"], sample)
+        self.assertEqual(page["rows"][0]["Village_Name"], sample)
         paged = self.client.get("/api/villages?per_page=25&page=2").get_json()
         self.assertEqual(len(paged["rows"]), 25)
         self.assertEqual(paged["page"], 2)
@@ -58,7 +59,7 @@ class AppTests(unittest.TestCase):
         rows = list(csv.DictReader(io.StringIO(response.get_data(as_text=True))))
         expected = len(project.DATA[project.DATA["Taluka"] == filters["talukas"][0]])
         self.assertEqual(len(rows), expected)
-        self.assertEqual(len(rows[0]), 58)
+        self.assertEqual(len(rows[0]), 60)
 
     def test_crop_filter_only_changes_agriculture_and_employment(self):
         self.signup_and_login()
@@ -70,13 +71,12 @@ class AppTests(unittest.TestCase):
         self.assertEqual(scoped["kpis"], full["kpis"])
         self.assertEqual(scoped["population_by_taluka"], full["population_by_taluka"])
         self.assertEqual(scoped["households_by_taluka"], full["households_by_taluka"])
-        self.assertEqual(scoped["literacy_by_taluka"], full["literacy_by_taluka"])
+        self.assertEqual(scoped["gender_literacy_by_taluka"], full["gender_literacy_by_taluka"])
         self.assertEqual(scoped["services"], full["services"])
-        self.assertEqual(scoped["gender"], full["gender"])
         self.assertEqual(scoped["age"], full["age"])
         self.assertLess(scoped["agriculture_kpis"]["villages"], full["agriculture_kpis"]["villages"])
         self.assertLess(scoped["agriculture_kpis"]["area"], full["agriculture_kpis"]["area"])
-        self.assertLess(scoped["agriculture_kpis"]["total_workers"], full["agriculture_kpis"]["total_workers"])
+        self.assertLess(scoped["agriculture_kpis"]["workers"], full["agriculture_kpis"]["workers"])
         self.assertNotEqual(scoped["agriculture_kpis"]["women_workforce"], full["agriculture_kpis"]["women_workforce"])
         self.assertEqual({item["label"] for item in scoped["crop_area"]}, {crop})
         self.assertLess(sum(item["value"] for item in scoped["workforce"]), sum(item["value"] for item in full["workforce"]))
@@ -87,20 +87,37 @@ class AppTests(unittest.TestCase):
         self.assertTrue((project.DATA[project.DATA["Village_Name"].isin(options)]["Taluka"] == taluka).all())
 
     def test_csrf_and_invalid_credentials(self):
-        bad = self.client.post("/api/signup", json={"full_name": "Valid Name", "username": "validid", "password": "Password123", "confirm_password": "Password123", "recovery_code": "recover123"})
+        bad = self.client.post("/api/signup", json={"full_name": "Valid Name", "username": "validid", "password": "Password123", "confirm_password": "Password123"})
         self.assertEqual(bad.status_code, 400)
         response = self.post("/api/login", {"username": "missing", "password": "wrong"})
         self.assertEqual(response.status_code, 401)
+        for _ in range(5):
+            response = self.post("/api/login", {"username": "blocked-user", "password": "wrong"})
+            self.assertEqual(response.status_code, 401)
+        self.assertEqual(self.post("/api/login", {"username": "blocked-user", "password": "wrong"}).status_code, 429)
+
+    def test_guest_read_only_access_and_data_dictionary(self):
+        response = self.post("/api/guest", {})
+        self.assertEqual(response.status_code, 200)
+        self.csrf = response.get_json()["csrf_token"]
+        self.assertEqual(self.client.get("/api/dashboard").status_code, 200)
+        dictionary = self.client.get("/api/data-dictionary.csv")
+        self.assertEqual(dictionary.status_code, 200)
+        self.assertEqual(dictionary.mimetype, "text/csv")
+        self.assertIn("Latitude_Illustrative_Not_Official", dictionary.get_data(as_text=True))
 
     def test_pages_and_static_assets(self):
         home = self.client.get("/")
         self.assertEqual(home.status_code, 200)
         self.assertIn(b"Simulated", home.data)
         css = self.client.get("/static/styles.css")
+        accessible_css = self.client.get("/static/accessibility.css")
         js = self.client.get("/static/app.js")
         self.assertEqual(css.status_code, 200)
+        self.assertEqual(accessible_css.status_code, 200)
         self.assertEqual(js.status_code, 200)
         css.close()
+        accessible_css.close()
         js.close()
 
 

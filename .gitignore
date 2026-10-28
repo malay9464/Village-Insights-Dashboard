@@ -12,6 +12,7 @@ __pycache__/
 instance/users.db
 instance/users.db-shm
 instance/users.db-wal
+instance/secret_key
 
 # Environment variables and secrets
 .env

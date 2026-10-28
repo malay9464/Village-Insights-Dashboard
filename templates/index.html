@@ -3,181 +3,218 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Sabarkantha | Village Insights</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Manrope:wght@500;600;700;800&display=swap" rel="stylesheet">
-  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-  <link rel="stylesheet" href="/static/styles.css">
+  <meta name="theme-color" content="#123b2f">
+  <title>Sabarkantha Village Insights</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='accessibility.css') }}">
+  <script src="{{ url_for('static', filename='app.js') }}" defer></script>
 </head>
 <body>
-<div id="toast" class="toast" role="status"></div>
+<div id="toast" class="toast" role="status" aria-live="polite"></div>
 
 <section id="auth-screen" class="auth-layout">
   <div class="auth-story">
-    <div class="brand"><span class="brand-mark">✳</span><span>FIELDNOTE <b> / INSIGHTS</b></span></div>
+    <div class="brand"><svg class="brand-symbol" viewBox="0 0 32 32" aria-hidden="true"><path d="M16 3v26M3 16h26M6.8 6.8l18.4 18.4M25.2 6.8 6.8 25.2"/></svg><span>SABARKANTHA <b>/ VILLAGE INSIGHTS</b></span></div>
     <div class="story-content">
-      <div class="eyebrow">SABARKANTHA DISTRICT · GUJARAT</div>
+      <div class="eyebrow">DISTRICT DATA EXPLORER · GUJARAT</div>
       <h1>See the village.<br><em>Understand the bigger picture.</em></h1>
-      <p>A clean, interactive view of village demographics, education, healthcare, agriculture and essential services.</p>
+      <p>Explore population, education, infrastructure, agriculture and employment with clear, filterable summaries.</p>
       <div class="story-stats">
-        <div><strong>3,500</strong><span>dataset records</span></div>
-        <div><strong>58</strong><span>data fields</span></div>
-        <div><strong>10+</strong><span>insight categories</span></div>
+        <div><strong>{{ "{:,}".format(metadata.records) }}</strong><span>village records</span></div>
+        <div><strong>{{ metadata.fields }}</strong><span>data fields</span></div>
+        <div><strong>{{ metadata.categories }}</strong><span>data categories</span></div>
       </div>
     </div>
-    <div class="story-foot">A data visualization project · Simulated data for learning and demonstration</div>
+    <div class="story-foot">A postgraduate data visualization demonstration · {{ metadata.year }} snapshot</div>
   </div>
   <div class="auth-side">
-    <div class="auth-mobile-brand">✳ FIELDNOTE <b>/ INSIGHTS</b></div>
+    <div class="auth-mobile-brand">SABARKANTHA <b>/ VILLAGE INSIGHTS</b></div>
     <div class="auth-card">
-      <div class="auth-heading"><span class="eyebrow" id="auth-eyebrow">YOUR WORKSPACE</span><h2 id="auth-title">Welcome back.</h2><p id="auth-subtitle">Sign in to explore village-level insights.</p></div>
+      <div class="auth-heading"><span class="eyebrow" id="auth-eyebrow">YOUR WORKSPACE</span><h2 id="auth-title">Welcome back.</h2><p id="auth-subtitle">Sign in, or explore the dataset as a guest.</p></div>
       <div class="auth-tabs" id="auth-tabs">
-        <button class="auth-tab active" data-mode="login">Log in</button>
-        <button class="auth-tab" data-mode="signup">Create account</button>
+        <button class="auth-tab active" data-mode="login" type="button">Log in</button>
+        <button class="auth-tab" data-mode="signup" type="button">Create account</button>
       </div>
-      <form id="login-form" class="auth-form">
-        <label>Login ID<input name="username" placeholder="e.g. malay.b" autocomplete="username" required></label>
-        <label>Password<input name="password" type="password" placeholder="Enter your password" autocomplete="current-password" required></label>
-        <button class="btn btn-primary btn-wide" type="submit">Log in <span>→</span></button>
+      <form id="login-form" class="auth-form" novalidate>
+        <label for="login-username">Login ID</label><input id="login-username" name="username" placeholder="e.g. malay.b" autocomplete="username" required aria-describedby="login-username-error"><small class="field-error hidden" id="login-username-error"></small>
+        <label for="login-password">Password</label><div class="password-control"><input id="login-password" name="password" type="password" placeholder="Enter your password" autocomplete="current-password" required aria-describedby="login-password-error"><button class="password-toggle" type="button" data-target="login-password" aria-label="Show password" aria-pressed="false">Show</button></div><small class="field-error hidden" id="login-password-error"></small>
+        <button class="btn btn-primary btn-wide" type="submit">Log in <span aria-hidden="true">→</span></button>
         <button type="button" class="text-button" id="forgot-link">Forgot password?</button>
+        <div class="auth-divider"><span>or</span></div>
+        <button type="button" id="guest-button" class="btn btn-secondary btn-wide">Explore as a guest</button>
       </form>
-      <form id="signup-form" class="auth-form hidden">
-        <label>Full name<input name="full_name" placeholder="Your name" required></label>
-        <label>Choose a Login ID<input name="username" placeholder="3–24 letters, numbers, . _ -" required></label>
-        <label>Password<input name="password" type="password" minlength="8" placeholder="At least 8 characters" required></label>
-        <label>Confirm password<input name="confirm_password" type="password" minlength="8" placeholder="Enter the same password again" required></label>
-        <label>Recovery code<input name="recovery_code" type="password" minlength="6" placeholder="Keep this safe for password recovery" required></label>
-        <p class="field-note">Your recovery code replaces email-based password recovery. Keep it private.</p>
-        <button class="btn btn-primary btn-wide" type="submit">Create account <span>→</span></button>
+      <form id="signup-form" class="auth-form hidden" novalidate>
+        <label for="signup-name">Full name</label><input id="signup-name" name="full_name" placeholder="Your name" autocomplete="name" required aria-describedby="signup-name-error"><small class="field-error hidden" id="signup-name-error"></small>
+        <label for="signup-username">Choose a Login ID</label><input id="signup-username" name="username" placeholder="3–24 letters, numbers, . _ -" autocomplete="username" required aria-describedby="signup-username-error"><small class="field-error hidden" id="signup-username-error"></small>
+        <label for="signup-password">Password</label><div class="password-control"><input id="signup-password" name="password" type="password" minlength="8" placeholder="At least 8 characters" autocomplete="new-password" required aria-describedby="signup-password-error"><button class="password-toggle" type="button" data-target="signup-password" aria-label="Show password" aria-pressed="false">Show</button></div><small class="field-error hidden" id="signup-password-error"></small>
+        <label for="signup-confirm">Confirm password</label><div class="password-control"><input id="signup-confirm" name="confirm_password" type="password" minlength="8" placeholder="Enter the same password again" autocomplete="new-password" required aria-describedby="signup-confirm_password-error"><button class="password-toggle" type="button" data-target="signup-confirm" aria-label="Show password" aria-pressed="false">Show</button></div><small class="field-error hidden" id="signup-confirm_password-error"></small>
+        <p class="field-note">A one-time recovery code will be generated after account creation. Save it securely.</p>
+        <button class="btn btn-primary btn-wide" type="submit">Create account <span aria-hidden="true">→</span></button>
       </form>
-      <form id="forgot-form" class="auth-form hidden">
+      <form id="forgot-form" class="auth-form hidden" novalidate>
         <button type="button" class="back-button" id="back-login">← Back to login</button>
-        <label>Login ID<input name="username" required placeholder="Your Login ID"></label>
-        <label>Recovery code<input name="recovery_code" type="password" required placeholder="Your recovery code"></label>
-        <label>New password<input name="new_password" type="password" minlength="8" required placeholder="At least 8 characters"></label>
-        <button class="btn btn-primary btn-wide" type="submit">Reset password <span>→</span></button>
+        <label for="forgot-username">Login ID</label><input id="forgot-username" name="username" autocomplete="username" required aria-describedby="forgot-username-error"><small class="field-error hidden" id="forgot-username-error"></small>
+        <label for="forgot-recovery">Recovery code</label><div class="password-control"><input id="forgot-recovery" name="recovery_code" type="password" autocomplete="off" required aria-describedby="forgot-recovery_code-error"><button class="password-toggle" type="button" data-target="forgot-recovery" aria-label="Show recovery code" aria-pressed="false">Show</button></div><small class="field-error hidden" id="forgot-recovery_code-error"></small>
+        <label for="forgot-new-password">New password</label><div class="password-control"><input id="forgot-new-password" name="new_password" type="password" minlength="8" autocomplete="new-password" required aria-describedby="forgot-new_password-error"><button class="password-toggle" type="button" data-target="forgot-new-password" aria-label="Show password" aria-pressed="false">Show</button></div><small class="field-error hidden" id="forgot-new_password-error"></small>
+        <label for="forgot-confirm">Confirm new password</label><div class="password-control"><input id="forgot-confirm" name="confirm_password" type="password" minlength="8" autocomplete="new-password" required aria-describedby="forgot-confirm_password-error"><button class="password-toggle" type="button" data-target="forgot-confirm" aria-label="Show password" aria-pressed="false">Show</button></div><small class="field-error hidden" id="forgot-confirm_password-error"></small>
+        <button class="btn btn-primary btn-wide" type="submit">Reset password <span aria-hidden="true">→</span></button>
       </form>
-      <div class="auth-bottom"><span class="status-dot"></span> Private workspace · Login ID only · No email required</div>
+      <div class="auth-bottom"><span class="status-dot"></span> Passwords and recovery codes are stored as hashes</div>
     </div>
-    <div class="auth-disclaimer">This dashboard uses simulated data, not official census or government records.</div>
   </div>
 </section>
 
+<dialog id="recovery-dialog" class="recovery-dialog" aria-labelledby="recovery-title">
+  <div class="recovery-dialog-inner"><div class="eyebrow">SAVE THIS CODE NOW</div><h2 id="recovery-title">Your recovery code</h2><p>This code is shown once. Store it somewhere private; it cannot be retrieved later.</p>
+    <code id="generated-recovery-code" class="recovery-code"></code>
+    <div class="recovery-actions"><button type="button" class="btn btn-secondary" id="copy-recovery">Copy code</button><button type="button" class="btn btn-secondary" id="download-recovery">Download code</button></div>
+    <button type="button" class="btn btn-primary btn-wide" id="recovery-continue">I saved my code</button>
+  </div>
+</dialog>
+
 <section id="app-screen" class="app-shell hidden">
   <aside class="sidebar">
-    <div class="side-brand"><span class="brand-mark">✳</span><span>FIELDNOTE <small>INSIGHTS</small></span></div>
+    <div class="side-brand"><svg class="brand-symbol" viewBox="0 0 32 32" aria-hidden="true"><path d="M16 3v26M3 16h26M6.8 6.8l18.4 18.4M25.2 6.8 6.8 25.2"/></svg><span>SABARKANTHA<small>VILLAGE INSIGHTS</small></span></div>
     <div class="workspace-label">WORKSPACE</div>
-    <nav class="side-nav">
-      <button class="nav-item active" data-page="overview"><span>◫</span> Overview</button>
-      <button class="nav-item" data-page="people"><span>♙</span> People & households</button>
-      <button class="nav-item" data-page="services"><span>⌂</span> Essential services</button>
-      <button class="nav-item" data-page="agriculture"><span>❋</span> Agriculture & work</button>
-      <button class="nav-item" data-page="explorer"><span>▤</span> Data explorer</button>
-      <button class="nav-item" data-page="methodology"><span>ⓘ</span> Methodology</button>
-      <button class="nav-item" data-page="about"><span>✳</span> About
-      </button>
+    <nav class="side-nav" aria-label="Dashboard pages">
+      <button class="nav-item active" data-page="overview"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 4h7v7H4zM13 4h7v5h-7zM13 11h7v9h-7zM4 13h7v7H4z"/></svg>Overview</button>
+      <button class="nav-item" data-page="people"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="9" cy="8" r="3"/><path d="M3 20c0-3.2 2.4-5.5 6-5.5s6 2.3 6 5.5M16 5.5a3 3 0 0 1 0 5.7M17 15c2.5.5 4 2.2 4 5"/></svg>Population</button>
+      <button class="nav-item" data-page="services"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20V8l8-5 8 5v12M8 20v-7h8v7M9 9h.01M15 9h.01"/></svg>Education & infrastructure</button>
+      <button class="nav-item" data-page="agriculture"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 20c9 0 14-5 14-14C10 6 5 11 5 20ZM5 20c2-5 5-8 10-11"/></svg>Agriculture & employment</button>
+      <button class="nav-item" data-page="explorer"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 4h14v16H5zM8 8h8M8 12h8M8 16h5"/></svg>Data explorer</button>
+      <button class="nav-item" data-page="methodology"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 8h.01"/></svg>Methodology</button>
+      <button class="nav-item" data-page="about"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v18M3 12h18M5.6 5.6l12.8 12.8M18.4 5.6 5.6 18.4"/></svg>About</button>
     </nav>
     <div class="side-bottom">
-      <div class="user-chip"><div class="avatar" id="user-avatar">M</div><div><strong id="user-name">User</strong><span id="user-id">@user</span></div></div>
-      <button id="logout-btn" class="logout-btn">↪ Log out</button>
-      <div class="side-note">DATASET STATUS <b><span class="status-dot"></span> Loaded locally</b><small>3,500 simulated records</small></div>
+      <div class="user-chip"><div class="avatar" id="user-avatar">G</div><div><strong id="user-name">Guest</strong><span id="user-id">Read-only preview</span></div></div>
+      <button id="logout-btn" class="logout-btn">Log out</button>
+      <div class="side-note">DATASET <b><span class="status-dot"></span> Loaded locally</b><small id="dataset-status">{{ "{:,}".format(metadata.records) }} rows · {{ metadata.fields }} fields</small></div>
     </div>
   </aside>
 
   <main class="main-area">
     <header class="topbar">
-      <div><div class="breadcrumb">WORKSPACE <span>/</span> <b id="breadcrumb-page">OVERVIEW</b></div><div class="topbar-title" id="topbar-title">Village overview</div></div>
-      <div class="top-actions"><span class="data-pill"><span class="status-dot"></span> Demo dataset</span><button class="filter-toggle" id="mobile-filter-toggle">☷ Filters</button></div>
+      <div><div class="breadcrumb">WORKSPACE <span>/</span> <b id="breadcrumb-page">OVERVIEW</b></div><div class="topbar-title" id="topbar-title">District overview</div></div>
+      <div class="top-actions"><span class="data-pill" id="snapshot-pill">{{ metadata.year }} snapshot</span><span class="guest-pill hidden" id="guest-pill">READ-ONLY GUEST</span><button class="filter-toggle" id="mobile-filter-toggle" type="button" aria-expanded="false">Filters</button></div>
     </header>
-    <section class="filterbar" id="filterbar">
-      <div class="filter-heading"><span>FILTER VIEW</span><button id="reset-filters">Reset</button></div>
-      <label>Reference year<select id="year-filter"><option value="All">All years</option></select></label>
+    <section class="filterbar" id="filterbar" aria-label="Dashboard filters">
+      <div class="filter-heading"><span>FILTER VIEW</span><button id="reset-filters" type="button">Reset</button></div>
       <label>Taluka<select id="taluka-filter"><option value="All">All talukas</option></select></label>
       <label>Village<select id="village-filter"><option value="All">All villages</option></select></label>
-      <label>Main crop (agriculture)<select id="crop-filter"><option value="All">All crops</option></select></label>
-      <div class="filter-foot">Year, taluka and village scope all insights. Crop scopes agriculture and employment, plus explorer records.</div>
+      <label>Main crop <small>(agriculture & explorer)</small><select id="crop-filter"><option value="All">All crops</option></select></label>
+      <div class="filter-foot" id="filter-status" role="status" aria-live="polite">Taluka and village scope all summaries. Crop only scopes agriculture, employment and explorer rows.</div>
     </section>
-    <div class="content" id="page-overview">
-      <section class="page-intro"><div><div class="eyebrow">SABARKANTHA · GUJARAT</div><h1>Village insights, <em>made clear.</em></h1><p>Explore population, opportunity and access to essential services across the district.</p><p class="snapshot-caption">The supplied workbook contains a single 2024 snapshot; no year-over-year trend is implied.</p></div><div class="intro-icon">↗</div></section>
-      <div class="notice"><span>ⓘ</span><div><b>Demonstration dataset</b><p>These records are synthetic/simulated and should not be interpreted as official village statistics.</p></div></div>
-      <div class="kpi-grid">
-        <article class="kpi-card"><div class="kpi-label">TOTAL POPULATION <span>↗</span></div><div class="kpi-value" id="kpi-population">—</div><div class="kpi-foot">Year, taluka and village scope</div></article>
-        <article class="kpi-card"><div class="kpi-label">VILLAGES IN VIEW <span>⌖</span></div><div class="kpi-value" id="kpi-villages">—</div><div class="kpi-foot">Unique village names</div></article>
-        <article class="kpi-card"><div class="kpi-label">AVERAGE LITERACY <span>▥</span></div><div class="kpi-value" id="kpi-literacy">—</div><div class="kpi-foot">Mean literacy rate</div></article>
-        <article class="kpi-card"><div class="kpi-label">INTERNET ACCESS <span>⌁</span></div><div class="kpi-value" id="kpi-internet">—</div><div class="kpi-foot">Mean household coverage · geographic scope</div></article>
+    <div id="dashboard-loading" class="loading-line hidden" role="status" aria-live="polite">Updating results…</div>
+
+    <section class="content" id="page-overview" aria-labelledby="overview-title">
+      <div class="page-intro"><div><div class="eyebrow">SABARKANTHA · {{ metadata.year }} SNAPSHOT</div><h1 id="overview-title">Village insights, <em>made clear.</em></h1><p>Explore the district’s simulated population, services and livelihoods.</p></div><span class="snapshot-mark">{{ metadata.year }}</span></div>
+      <div class="notice"><span aria-hidden="true">i</span><div><b>Simulated demonstration data</b><p>These records are synthetic and are not official village statistics. Findings are descriptive and should not guide policy decisions.</p></div></div>
+      <div class="kpi-grid overview-kpis">
+        <article class="kpi-card"><div class="kpi-label">TOTAL POPULATION</div><div class="kpi-value" id="kpi-population">—</div><div class="kpi-foot">Year / taluka / village scope</div></article>
+        <article class="kpi-card"><div class="kpi-label">DISTINCT VILLAGES</div><div class="kpi-value" id="kpi-villages">—</div><div class="kpi-foot">Unique village names</div></article>
+        <article class="kpi-card"><div class="kpi-label">FEMALE–MALE LITERACY GAP</div><div class="kpi-value" id="kpi-literacy-gap">—</div><div class="kpi-foot">Percentage points · district mean</div></article>
+        <article class="kpi-card"><div class="kpi-label">AVERAGE LITERACY</div><div class="kpi-value" id="kpi-literacy">—</div><div class="kpi-foot">Arithmetic mean of village rates</div></article>
       </div>
-      <div class="section-head"><div><h2>District at a glance</h2><p>Compare the biggest population centres and the main agricultural footprint.</p></div><span class="section-tag">01 / OVERVIEW</span></div>
+      <div class="finding-grid" aria-label="Key findings">
+        <article class="finding-card"><span>HEALTH FACILITY</span><strong id="finding-health">—</strong><p>Share of villages reporting one</p></article>
+        <article class="finding-card"><span>BANK</span><strong id="finding-bank">—</strong><p>Share of villages reporting one</p></article>
+        <article class="finding-card"><span>SOLAR ENERGY</span><strong id="finding-solar">—</strong><p>Share of villages reporting one</p></article>
+        <article class="finding-card"><span>HOUSEHOLD DIGITAL GAP</span><strong id="finding-digital-gap">—</strong><p id="finding-digital-detail">Mobile access minus internet access</p></article>
+        <article class="finding-card"><span>SEX RATIO</span><strong id="finding-sex-ratio">—</strong><p>Women per 1,000 men · population weighted</p></article>
+        <article class="finding-card"><span>SC POPULATION SHARE</span><strong id="finding-sc">—</strong><p>Population weighted</p></article>
+        <article class="finding-card"><span>ST POPULATION SHARE</span><strong id="finding-st">—</strong><p>Population weighted</p></article>
+        <article class="finding-card"><span>VILLAGE POPULATION</span><strong id="finding-size">—</strong><p>Median; largest shown after slash</p></article>
+      </div>
+      <div class="section-head"><div><h2>Where people live</h2><p>Counts cover all selected villages and are not restricted by the crop filter.</p></div></div>
+      <div class="chart-grid overview-charts">
+        <article class="chart-card wide-chart"><div class="chart-head"><div><h3>Population by taluka</h3><p id="takeaway-population-taluka" class="chart-takeaway">Total people in each taluka</p></div></div><div class="chart-wrap"><canvas id="population-chart" role="img" aria-label="Population by taluka, people"></canvas></div></article>
+        <article class="chart-card"><div class="chart-head"><div><h3>10 most populous villages</h3><p id="takeaway-top-villages" class="chart-takeaway">Largest simulated village populations</p></div></div><div class="chart-wrap chart-wrap-tall"><canvas id="top-villages-chart" role="img" aria-label="Ten villages with the largest populations"></canvas></div></article>
+        <article class="chart-card"><div class="chart-head"><div><h3>10 least populous villages</h3><p id="takeaway-bottom-villages" class="chart-takeaway">Smallest simulated village populations</p></div></div><div class="chart-wrap chart-wrap-tall"><canvas id="bottom-villages-chart" role="img" aria-label="Ten villages with the smallest populations"></canvas></div></article>
+      </div>
+    </section>
+
+    <section class="content hidden" id="page-people" aria-labelledby="people-title">
+      <div class="page-intro compact-intro"><div><div class="eyebrow">POPULATION</div><h1 id="people-title">People & population</h1><p>Age structure, settlement sizes and literacy differences by gender.</p></div></div>
       <div class="chart-grid">
-        <article class="chart-card wide-chart"><div class="chart-head"><div><h3>Population by taluka</h3><p>Top talukas in the selected geographic scope</p></div><span class="chart-mark">01</span></div><div class="chart-wrap"><canvas id="population-chart"></canvas></div></article>
-        <article class="chart-card"><div class="chart-head"><div><h3>Household access</h3><p>Average service coverage</p></div><span class="chart-mark">02</span></div><div class="chart-wrap chart-wrap-tall"><canvas id="services-chart"></canvas></div></article>
-        <article class="chart-card"><div class="chart-head"><div><h3>Agricultural area by crop</h3><p>Responds to the crop filter; population metrics do not</p></div><span class="chart-mark">03</span></div><div class="chart-wrap"><canvas id="crop-chart"></canvas></div></article>
-        <article class="chart-card"><div class="chart-head"><div><h3>Literacy by taluka</h3><p>Average literacy rate (%)</p></div><span class="chart-mark">04</span></div><div class="chart-wrap"><canvas id="literacy-chart"></canvas></div></article>
+        <article class="chart-card wide-chart"><div class="chart-head"><div><h3>Male vs female literacy by taluka</h3><p id="takeaway-literacy-gender" class="chart-takeaway">Mean village literacy rate, percent</p></div></div><div class="chart-wrap"><canvas id="gender-literacy-chart" role="img" aria-label="Grouped comparison of male and female literacy rates by taluka"></canvas></div></article>
+        <article class="chart-card"><div class="chart-head"><div><h3>Female–male literacy gap</h3><p id="takeaway-literacy-gap" class="chart-takeaway">Male literacy minus female literacy; district mean reference line</p></div></div><div class="chart-wrap"><canvas id="literacy-gap-chart" role="img" aria-label="Female and male literacy difference by taluka, percentage points"></canvas></div></article>
+        <article class="chart-card"><div class="chart-head"><div><h3>Village population size</h3><p id="takeaway-size" class="chart-takeaway">Number of villages in each population band</p></div></div><div class="chart-wrap"><canvas id="population-size-chart" role="img" aria-label="Histogram of village population size bands"></canvas></div></article>
+        <article class="chart-card"><div class="chart-head"><div><h3>Population age bands</h3><p id="takeaway-age" class="chart-takeaway">People by age group</p></div></div><div class="chart-wrap"><canvas id="age-chart" role="img" aria-label="Population counts by age group"></canvas></div></article>
       </div>
-      <div class="bottom-note"><span>✳</span><p><b>How to read this dashboard</b><br>Use the filters to narrow the data. Hover over charts for exact values. All comparisons are descriptive summaries of the supplied simulated workbook.</p></div>
-    </div>
+    </section>
 
-    <div class="content hidden" id="page-people">
-      <section class="page-intro compact-intro"><div><div class="eyebrow">PEOPLE & HOUSEHOLDS</div><h1>Who lives here?</h1><p>Population structure, gender balance and household patterns.</p></div><div class="intro-icon">♙</div></section>
-      <div class="kpi-grid">
-        <article class="kpi-card"><div class="kpi-label">TOTAL HOUSEHOLDS</div><div class="kpi-value" id="people-households">—</div><div class="kpi-foot">Across filtered villages</div></article>
-        <article class="kpi-card"><div class="kpi-label">AVERAGE HOUSEHOLD SIZE</div><div class="kpi-value" id="people-household-size">—</div><div class="kpi-foot">People per household</div></article>
+    <section class="content hidden" id="page-services" aria-labelledby="services-title">
+      <div class="page-intro compact-intro"><div><div class="eyebrow">EDUCATION & INFRASTRUCTURE</div><h1 id="services-title">Access across villages</h1><p>Household utility coverage and village-level facility availability are separate measures.</p></div></div>
+      <div class="kpi-grid three-kpis">
+        <article class="kpi-card"><div class="kpi-label">CHILD SCHOOL ATTENDANCE</div><div class="kpi-value" id="kpi-attendance">—</div><div class="kpi-foot">Mean village percentage</div></article>
+        <article class="kpi-card"><div class="kpi-label">MATERNAL HEALTH ACCESS</div><div class="kpi-value" id="kpi-maternal">—</div><div class="kpi-foot">Mean village percentage</div></article>
+        <article class="kpi-card"><div class="kpi-label">HOUSEHOLD POVERTY RATE</div><div class="kpi-value" id="kpi-poverty">—</div><div class="kpi-foot">Mean village percentage</div></article>
       </div>
       <div class="chart-grid">
-        <article class="chart-card"><div class="chart-head"><div><h3>Population by gender</h3><p>Summed population counts</p></div></div><div class="chart-wrap"><canvas id="gender-chart"></canvas></div></article>
-        <article class="chart-card"><div class="chart-head"><div><h3>Age composition</h3><p>Population across age groups</p></div></div><div class="chart-wrap"><canvas id="age-chart"></canvas></div></article>
-        <article class="chart-card"><div class="chart-head"><div><h3>Households by taluka</h3><p>Household totals in the selected geographic scope</p></div></div><div class="chart-wrap"><canvas id="households-chart"></canvas></div></article>
-        <article class="chart-card"><div class="chart-head"><div><h3>Literacy gap by taluka</h3><p>Compare literacy rate across talukas</p></div></div><div class="chart-wrap"><canvas id="people-literacy-chart"></canvas></div></article>
+        <article class="chart-card wide-chart"><div class="chart-head"><div><h3>Household utility coverage</h3><p id="takeaway-utilities" class="chart-takeaway">Mean household coverage by utility, percent</p></div></div><div class="chart-wrap"><canvas id="utilities-chart" role="img" aria-label="Household coverage rates for electricity, water, sanitation, internet, mobile and LPG"></canvas></div></article>
+        <article class="chart-card"><div class="chart-head"><div><h3>Education & maternal access by taluka</h3><p id="takeaway-education" class="chart-takeaway">Mean village percentages</p></div></div><div class="chart-wrap chart-wrap-tall"><canvas id="education-chart" role="img" aria-label="School attendance and maternal health access by taluka"></canvas></div></article>
+        <article class="chart-card"><div class="chart-head"><div><h3>Village facility availability by taluka</h3><p id="takeaway-heatmap" class="chart-takeaway">Share of villages with each facility; not household coverage</p></div></div><div class="heatmap-wrap" id="facility-heatmap" role="region" aria-label="Taluka by facility availability heatmap" tabindex="0"></div></article>
+        <article class="chart-card"><div class="chart-head"><div><h3>Household poverty by taluka</h3><p id="takeaway-poverty" class="chart-takeaway">Mean simulated household poverty rate, percent</p></div></div><div class="chart-wrap chart-wrap-tall"><canvas id="poverty-chart" role="img" aria-label="Mean household poverty rate by taluka"></canvas></div></article>
+        <article class="chart-card"><div class="chart-head"><div><h3>Distance to service centres</h3><p id="takeaway-distance" class="chart-takeaway">Mean distance by taluka, kilometres</p></div></div><div class="chart-wrap chart-wrap-tall"><canvas id="distance-chart" role="img" aria-label="Mean distance to taluka and district centres by taluka"></canvas></div></article>
       </div>
-    </div>
+    </section>
 
-    <div class="content hidden" id="page-services">
-      <section class="page-intro compact-intro"><div><div class="eyebrow">ESSENTIAL SERVICES</div><h1>Access matters.</h1><p>Explore village-level availability of education, healthcare and public infrastructure.</p></div><div class="intro-icon">⌂</div></section>
-      <div class="section-head"><div><h2>Service availability</h2><p>Share of filtered village records reporting each service.</p></div><span class="section-tag">02 / SERVICES</span></div>
-      <article class="chart-card"><div class="chart-wrap chart-wrap-extra"><canvas id="services-detail-chart"></canvas></div></article>
-      <div class="bottom-note"><span>ⓘ</span><p>Service availability is calculated from the workbook's availability flags. It is not a measure of service quality or distance to a facility.</p></div>
-    </div>
-
-    <div class="content hidden" id="page-agriculture">
-      <section class="page-intro compact-intro"><div><div class="eyebrow">AGRICULTURE & WORK</div><h1>Land, crops and livelihoods.</h1><p>Compare crop areas, irrigation patterns and employment categories.</p></div><div class="intro-icon">❋</div></section>
-      <div class="notice hidden" id="agri-empty"><span>ⓘ</span><div><b>No agriculture records match this combination</b><p>Try another crop, village or taluka. Demographic and infrastructure results still use the selected geographic scope.</p></div></div>
+    <section class="content hidden" id="page-agriculture" aria-labelledby="agriculture-title">
+      <div class="page-intro compact-intro"><div><div class="eyebrow">AGRICULTURE & EMPLOYMENT</div><h1 id="agriculture-title">Land, crops & livelihoods</h1><p>Crop selection applies to this page’s area, rainfall and employment summaries.</p></div></div>
       <div class="kpi-grid agriculture-kpis">
-        <article class="kpi-card"><div class="kpi-label">MATCHING CROP VILLAGES</div><div class="kpi-value" id="agri-villages">—</div><div class="kpi-foot">Crop-filtered agriculture scope</div></article>
-        <article class="kpi-card"><div class="kpi-label">AGRICULTURAL AREA</div><div class="kpi-value" id="agri-area">—</div><div class="kpi-foot">Sum of area values in km²</div></article>
-        <article class="kpi-card"><div class="kpi-label">AVG. RAINFALL</div><div class="kpi-value" id="agri-rainfall">—</div><div class="kpi-foot">Estimated annual rainfall</div></article>
-        <article class="kpi-card"><div class="kpi-label">TOTAL WORKERS</div><div class="kpi-value" id="agri-workforce-total">—</div><div class="kpi-foot">Sum in crop-filtered villages</div></article>
-        <article class="kpi-card"><div class="kpi-label">WOMEN'S WORKFORCE</div><div class="kpi-value" id="agri-women-work">—</div><div class="kpi-foot">Mean in crop-filtered villages</div></article>
+        <article class="kpi-card"><div class="kpi-label">CROP-MATCHING VILLAGES</div><div class="kpi-value" id="agri-villages">—</div><div class="kpi-foot">Within selected geography</div></article>
+        <article class="kpi-card"><div class="kpi-label">AGRICULTURAL AREA</div><div class="kpi-value" id="agri-area">—</div><div class="kpi-foot">Square kilometres</div></article>
+        <article class="kpi-card"><div class="kpi-label">AVERAGE RAINFALL</div><div class="kpi-value" id="agri-rainfall">—</div><div class="kpi-foot">Estimated mm per year</div></article>
+        <article class="kpi-card"><div class="kpi-label">TOTAL WORKERS</div><div class="kpi-value" id="agri-workers">—</div><div class="kpi-foot">Across crop-matching villages</div></article>
+        <article class="kpi-card"><div class="kpi-label">WOMEN’S WORKFORCE</div><div class="kpi-value" id="agri-women-work">—</div><div class="kpi-foot">Mean village participation</div></article>
       </div>
-      <div class="bottom-note"><span>ⓘ</span><p><b>Crop filter scope</b><br>Crop selection changes the agriculture and employment summaries below. Population, education and infrastructure use the full geographic selection.</p></div>
+      <div class="notice hidden" id="agri-empty"><span aria-hidden="true">i</span><div><b>No agriculture records match these filters</b><p>Try another crop, village or taluka. Population and infrastructure remain based on your geographic selection.</p></div></div>
       <div class="chart-grid">
-        <article class="chart-card"><div class="chart-head"><div><h3>Crop area distribution</h3><p>Agricultural area by main crop</p></div></div><div class="chart-wrap"><canvas id="agri-crop-chart"></canvas></div></article>
-        <article class="chart-card"><div class="chart-head"><div><h3>Irrigation source mix</h3><p>Agricultural area grouped by source</p></div></div><div class="chart-wrap"><canvas id="irrigation-chart"></canvas></div></article>
-        <article class="chart-card"><div class="chart-head"><div><h3>Workforce composition</h3><p>Counts by occupation type</p></div></div><div class="chart-wrap"><canvas id="agri-workforce-chart"></canvas></div></article>
+        <article class="chart-card"><div class="chart-head"><div><h3>Agricultural area by crop</h3><p id="takeaway-crops" class="chart-takeaway">Total area in square kilometres</p></div></div><div class="chart-wrap"><canvas id="crop-chart" role="img" aria-label="Agricultural area by main crop in square kilometres"></canvas></div></article>
+        <article class="chart-card"><div class="chart-head"><div><h3>Irrigation source mix</h3><p id="takeaway-irrigation" class="chart-takeaway">Village counts by primary source</p></div></div><div class="chart-wrap"><canvas id="irrigation-chart" role="img" aria-label="Village counts by primary irrigation source"></canvas></div></article>
+        <article class="chart-card"><div class="chart-head"><div><h3>Employment by category</h3><p id="takeaway-workforce" class="chart-takeaway">Workers in crop-matching villages</p></div></div><div class="chart-wrap chart-wrap-tall"><canvas id="workforce-chart" role="img" aria-label="Worker counts by employment category"></canvas></div></article>
+        <article class="chart-card"><div class="chart-head"><div><h3>Predominant soil type</h3><p id="takeaway-soil" class="chart-takeaway">Number of crop-matching village records</p></div></div><div class="chart-wrap"><canvas id="soil-chart" role="img" aria-label="Counts of villages by predominant soil type"></canvas></div></article>
       </div>
-    </div>
+    </section>
 
-    <div class="content hidden" id="page-explorer">
-      <section class="page-intro compact-intro"><div><div class="eyebrow">DATA EXPLORER</div><h1>Look closer.</h1><p>Search filtered village records and export a CSV for further analysis.</p></div><div class="intro-icon">▤</div></section>
-      <div class="table-toolbar"><div><h2>Village records</h2><p id="table-count">Loading records…</p></div><div class="table-actions"><input id="table-search" placeholder="Search filtered records…"><a class="btn btn-primary" id="export-link" href="/api/export">Export CSV ↓</a></div></div>
-      <div class="table-card"><div class="table-scroll"><table><thead id="table-head"></thead><tbody id="table-body"></tbody></table></div><div class="table-foot explorer-pager"><span>Sort by <select id="sort-field"><option value="Village_Name">Village</option><option value="Population_Total">Population</option><option value="Literacy_Rate_Percent">Literacy</option><option value="Households">Households</option><option value="Taluka">Taluka</option></select><select id="sort-direction"><option value="asc">Ascending</option><option value="desc">Descending</option></select></span><span class="pager-buttons"><button id="prev-page" class="btn">← Previous</button><span id="page-label">Page 1</span><button id="next-page" class="btn">Next →</button></span></div></div>
-    </div>
-
-    <div class="content hidden" id="page-methodology">
-      <section class="page-intro compact-intro"><div><div class="eyebrow">METHODOLOGY</div><h1>Know what the data says.</h1><p>Transparency about the source, processing and limits of this dashboard.</p></div><div class="intro-icon">ⓘ</div></section>
-      <div class="method-grid">
-        <article class="method-card"><span class="method-number">01</span><h3>Source</h3><p>The dashboard reads the supplied Excel workbook, <b>sabarkantha_synthetic_visualization_2024_3500_records.xlsx</b>, from the project folder.</p></article>
-        <article class="method-card"><span class="method-number">02</span><h3>Data status</h3><p>The workbook is synthetic/simulated data for visualization practice. It is not an official census, government survey or verified village register.</p></article>
-        <article class="method-card"><span class="method-number">03</span><h3>Aggregation</h3><p>Repeated rows are deduplicated by year and village for the dashboard summaries to reduce accidental double-counting of village totals.</p></article>
-        <article class="method-card"><span class="method-number">04</span><h3>Filter scope</h3><p>Year, taluka and village filters apply to all dashboard metrics. Crop selection applies to agriculture and employment summaries, and to record-level explorer results. It does not change population, education or infrastructure summaries.</p></article>
-        <article class="method-card"><span class="method-number">05</span><h3>Interpretation</h3><p>Rates are descriptive averages. Service flags show reported availability, not quality, capacity or accessibility. Do not use these figures for policy decisions.</p></article>
+    <section class="content hidden" id="page-explorer" aria-labelledby="explorer-title">
+      <div class="page-intro compact-intro"><div><div class="eyebrow">DATA EXPLORER</div><h1 id="explorer-title">Explore the records</h1><p>Search village names or talukas, choose columns, sort, page and export.</p></div></div>
+      <div class="table-toolbar"><div><h2>Village records</h2><p id="table-count" role="status" aria-live="polite">Loading records…</p></div>
+        <div class="table-actions"><label class="search-label" for="table-search">Search<input id="table-search" type="search" placeholder="Village or taluka only" autocomplete="off"></label>
+          <details class="column-picker"><summary id="column-summary">Choose columns</summary><div id="column-options" class="column-options"></div></details>
+          <label class="export-choice">Export<select id="export-mode"><option value="visible">Selected columns</option><option value="all">All data columns</option></select></label>
+          <a class="btn btn-primary" id="export-link" href="/api/export">Download CSV</a>
+          <a class="btn btn-secondary" href="/api/data-dictionary.csv">Data dictionary</a>
+        </div>
       </div>
-    </div>
-    <div class="content hidden" id="page-about">
-      <section class="page-intro compact-intro"><div><div class="eyebrow">ABOUT THIS PROJECT</div><h1>Village Insights</h1><p>A practical demonstration of interactive data analysis for Sabarkantha district.</p></div><div class="intro-icon">✳</div></section>
-      <div class="method-grid"><article class="method-card"><span class="method-number">PROJECT</span><h3>Purpose</h3><p>This student demonstration brings demographic, education, infrastructure and agriculture fields together in a filterable dashboard built with Flask, pandas, SQLite and Chart.js.</p></article><article class="method-card"><span class="method-number">DATA</span><h3>Use with care</h3><p>The supplied 3,500-row workbook is synthetic. It is useful for learning about data summaries and visualization, but does not describe actual villages or support official decisions.</p></article></div>
-    </div>
-    <footer class="main-footer"><span>FIELDNOTE / INSIGHTS</span><span>Built for exploration · Simulated data</span></footer>
+      <div class="table-card"><div class="table-scroll"><table><caption class="sr-only">Filtered village records</caption><thead id="table-head"></thead><tbody id="table-body"></tbody></table></div>
+        <div class="table-foot explorer-pager"><div class="sort-controls"><label>Sort by<select id="sort-field"></select></label><label>Order<select id="sort-direction"><option value="desc">Descending</option><option value="asc">Ascending</option></select></label></div><div class="pager-buttons"><button id="prev-page" class="btn btn-secondary" type="button">Previous</button><span id="page-label">Page 1</span><button id="next-page" class="btn btn-secondary" type="button">Next</button></div></div>
+      </div>
+      <p class="explorer-note">Search checks village name and taluka only. Facility flags display as Yes/No. Choose whether to export selected columns or the complete filtered record.</p>
+    </section>
+
+    <section class="content hidden" id="page-methodology" aria-labelledby="methodology-title">
+      <div class="page-intro compact-intro"><div><div class="eyebrow">METHODOLOGY</div><h1 id="methodology-title">How these numbers are calculated</h1><p>Formulas, filter scopes, data dictionary and limitations.</p></div></div>
+      <div class="method-grid formula-grid">
+        <article class="method-card"><span class="method-number">POPULATION</span><h3>Total population</h3><p>Sum of <code>Population_Total</code> across the selected year, taluka and village scope. Crop is ignored for demographic totals.</p></article>
+        <article class="method-card"><span class="method-number">VILLAGES</span><h3>Distinct villages</h3><p>Count of unique <code>Village_Name</code> values. The current workbook has one record per village in its single 2024 snapshot.</p></article>
+        <article class="method-card"><span class="method-number">LITERACY</span><h3>Gender gap</h3><p>Arithmetic mean of each village’s male literacy rate minus female literacy rate, in percentage points. The gender chart also reports each sex’s mean rate.</p></article>
+        <article class="method-card"><span class="method-number">HOUSEHOLD COVERAGE</span><h3>Utility percentages</h3><p>Arithmetic mean of village-level household electricity, water, sanitation, internet, mobile and LPG percentages. These are household coverage estimates.</p></article>
+        <article class="method-card"><span class="method-number">FACILITIES</span><h3>Facility availability</h3><p>Count of village records where the binary facility flag is 1, divided by selected villages. This is a village share, not household coverage.</p></article>
+        <article class="method-card"><span class="method-number">SOCIAL COMPOSITION</span><h3>SC/ST shares & sex ratio</h3><p>SC and ST population totals divided by total population. Sex ratio is total female population divided by total male population, multiplied by 1,000.</p></article>
+        <article class="method-card"><span class="method-number">VILLAGE SIZE</span><h3>Median & size bands</h3><p>Median and maximum of village population. Histogram bands count villages; they do not represent the number of people in each band.</p></article>
+        <article class="method-card"><span class="method-number">AGRICULTURE</span><h3>Crop-scoped indicators</h3><p>Crop selection applies to land, rainfall, employment and crop charts. Population, education, household utility and facility metrics keep the geographic scope and ignore crop.</p></article>
+        <article class="method-card"><span class="method-number">SOURCE</span><h3>Workbook & limits</h3><p>The revised workbook has {{ metadata.records|int }} records, {{ metadata.fields }} fields, one 2024 year and {{ metadata.categories }} derived subject categories. It is synthetic, not official data. Latitude/longitude columns are explicitly illustrative; no map is drawn without official boundaries.</p></article>
+      </div>
+      <div class="method-actions"><a class="btn btn-secondary" href="/api/data-dictionary.csv">Download data dictionary CSV</a></div>
+    </section>
+
+    <section class="content hidden" id="page-about" aria-labelledby="about-title">
+      <div class="page-intro compact-intro"><div><div class="eyebrow">ABOUT THE PROJECT</div><h1 id="about-title">Sabarkantha Village Insights</h1><p>A student demonstration of data processing, comparison and accessible visualization.</p></div></div>
+      <div class="method-grid"><article class="method-card"><span class="method-number">PURPOSE</span><h3>Explore, compare, question</h3><p>Filter village-level records to inspect population, literacy, facilities, utilities, agriculture and employment.</p></article><article class="method-card"><span class="method-number">ACCESS</span><h3>Guest preview</h3><p>Open the dashboard without an account. Guest sessions can read, filter and export records but cannot change account data.</p></article><article class="method-card"><span class="method-number">GEOGRAPHY</span><h3>No boundary map</h3><p>The workbook includes illustrative point coordinates, not an official GeoJSON boundary set. A map would suggest more geographic accuracy than the source supports.</p></article></div>
+    </section>
+    <footer class="main-footer"><span>SABARKANTHA VILLAGE INSIGHTS</span><span>Student data visualization demonstration</span></footer>
   </main>
 </section>
-<script src="/static/app.js"></script>
 </body>
 </html>

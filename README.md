@@ -1,10 +1,10 @@
 # Sabarkantha Village Insights
 
-A local Flask dashboard for exploring the supplied Sabarkantha synthetic village dataset. The workbook has 3,500 rows and 58 fields and represents a **single 2024 snapshot** across seven talukas. The workbook is synthetic/simulated, not government or census data.
+A Flask dashboard for the supplied simulated Sabarkantha village dataset. The current workbook contains 3,500 records, 60 columns, eight talukas, and one 2024 snapshot. These synthetic records are for demonstration and should not be treated as official statistics.
 
-## Run on Windows 11
+## Run on Windows
 
-Run these commands from this project folder:
+From this project folder:
 
 ```powershell
 python -m venv .venv
@@ -13,35 +13,35 @@ python -m pip install --default-timeout=300 --retries=10 -r requirements.txt
 python app.py
 ```
 
-Wait for Flask to print its `Running on ...` message, then keep that terminal open and visit <http://127.0.0.1:5000>. The app reads the included Excel workbook beside `app.py` and initializes `instance/users.db` automatically. No dataset generation step is needed because this project uses the workbook you supplied. Chart.js and Google Fonts are loaded from CDNs, so the charts and remote fonts need an internet connection; the rest of the app runs locally.
+Keep the Flask terminal open and visit <http://127.0.0.1:5000>. The workbook is read from this folder, and `instance/users.db` is created automatically. The persistent local Flask key is stored in `instance/secret_key`; it keeps sessions valid across restarts. Set `SECRET_KEY` in the environment to provide a deployment-managed key. Set `COOKIE_SECURE=1` only when serving over HTTPS.
 
-Flask binds to all network interfaces by default so a VS Code forwarded-port preview can reach it. This is intended for local demos on a trusted network. To restrict access to this computer only, stop the server with `Ctrl+C`, then run `$env:HOST='127.0.0.1'; python app.py` in PowerShell. If VS Code's embedded preview still times out, open the **Ports** panel, forward port `5000`, and open the forwarded address; alternatively open `http://127.0.0.1:5000` in Edge or Chrome on the same computer.
+The app can bind to the local network for a VS Code forwarded-port preview. For computer-only access, run `$env:HOST='127.0.0.1'; python app.py`. Chart.js 4.5.1 loads from cdnjs; if the CDN is unavailable, the dashboard renders accessible text summaries in place of interactive charts.
 
-Create an account with a Login ID, password, and recovery code. Keep the recovery code private; it is stored as a password hash and is not shown again. Set a stable random `SECRET_KEY` environment variable before using the app beyond a local demonstration. For HTTPS deployments set `COOKIE_SECURE=1`. This student project does not include production rate limiting or multi-user deployment hardening.
+## Dashboard behavior
 
-## Features
+- Start a read-only guest preview or create an account. Account passwords and generated recovery codes are stored as hashes. The recovery code appears once at signup and can be copied or downloaded.
+- The dataset has only one reference year, so the year selector is removed.
+- Taluka and village filters apply to all summaries. Main crop applies only to agriculture and employment; demographic, education, and infrastructure metrics remain district/village measures independent of crop.
+- The overview shows population, household access, literacy, digital access, sex ratio, social-group shares, village size, utilities, and facility coverage. Additional pages cover education, infrastructure, agriculture, and employment.
+- The explorer supports village/taluka search, sortable columns, pagination, column selection, and CSV export of either visible or all dataset columns. A generated data dictionary CSV is available because this workbook does not include a `Data_Dictionary` sheet.
+- The methodology page defines each KPI and identifies limitations. Geographic coordinates are illustrative; no map is presented as an official boundary or location source.
+- Navigation, filters, and explorer state are encoded in the URL. Filter requests cascade, show loading feedback, and cancel stale requests.
 
-- Login, registration, logout, and recovery-code password reset, using SQLite and Werkzeug password hashing.
-- Session-protected data APIs and CSRF checks for write requests.
-- Dashboard filters for year, taluka, village, and crop; reset filters restores the full view.
-- Filter scopes are explicit: year/taluka/village affect all insights; crop affects agriculture/employment and row-level explorer results, but not demographic, education, or infrastructure summaries.
-- Population, household, education/infrastructure, agriculture, workforce, and service summaries with Chart.js.
-- Searchable, sortable, paginated village explorer; CSV exports the complete filtered and searched result, not just the visible page.
-- Methodology and About sections explaining the synthetic data limitations.
+## Aggregation notes
 
-Totals are calculated after deduplicating on year and village. Rates are arithmetic averages of village-level values; binary service flags are converted to the share of villages reporting availability. Because the provided workbook contains only 2024, the interface explicitly describes it as a snapshot and does not imply historical change. This simulated data is for demonstration only and should not be used for policy or operational decisions.
+All totals and rates are calculated from the selected workbook rows. District-wide population and household counts are sums; rates and numeric indicators are means of village records unless explicitly described as population-weighted. Binary facility availability is the share of villages with a facility. Gender literacy is displayed as male and female averages with the percentage-point gap. Crop filtering does not change the demographic or service denominator.
 
-## Project files
-
-- `app.py` — Flask routes, authentication, filters, aggregation, explorer, and CSV export.
-- `templates/index.html` — responsive single-page dashboard and auth screens.
-- `static/app.js`, `static/styles.css` — interactions, charts, and responsive styling.
-- `sabarkantha_synthetic_visualization_2024_3500_records.xlsx` — supplied workbook.
-- `instance/users.db` — created on first run; contains local user accounts.
-- `tests/test_app.py` — backend tests for authentication, recovery, aggregation, filters, pagination, CSV export, and CSRF.
-
-## Run backend checks
+## Backend checks
 
 ```powershell
 python -m unittest discover -s tests -v
 ```
+
+## Project files
+
+- `app.py` — workbook loading, authentication, APIs, aggregation, exports.
+- `templates/index.html` — responsive dashboard and account screens.
+- `static/app.js` — URL state, accessible charts, filters, explorer and auth flows.
+- `static/styles.css`, `static/accessibility.css` — dashboard styling and accessibility adjustments.
+- `sabarkantha_synthetic_visualization_2024_3500_records (2).xlsx` — current supplied workbook.
+- `instance/users.db`, `instance/secret_key` — local runtime account data and persistent session key; do not publish these files.
