@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#123b2f">
-  <title>Sabarkantha Village Insights</title>
+  <title>Sabarkantha District Insights</title>
   <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='accessibility.css') }}">
   <script src="{{ url_for('static', filename='app.js') }}" defer></script>
@@ -14,7 +14,7 @@
 
 <section id="auth-screen" class="auth-layout">
   <div class="auth-story">
-    <div class="brand"><svg class="brand-symbol" viewBox="0 0 32 32" aria-hidden="true"><path d="M16 3v26M3 16h26M6.8 6.8l18.4 18.4M25.2 6.8 6.8 25.2"/></svg><span>SABARKANTHA <b>/ VILLAGE INSIGHTS</b></span></div>
+    <div class="brand"><svg class="brand-symbol" viewBox="0 0 32 32" aria-hidden="true"><path d="M16 3v26M3 16h26M6.8 6.8l18.4 18.4M25.2 6.8 6.8 25.2"/></svg><span>SABARKANTHA <b>/ District INSIGHTS</b></span></div>
     <div class="story-content">
       <div class="eyebrow">DISTRICT DATA EXPLORER · GUJARAT</div>
       <h1>See the village.<br><em>Understand the bigger picture.</em></h1>
@@ -28,7 +28,7 @@
     <div class="story-foot">A postgraduate data visualization demonstration · {{ metadata.year }} snapshot</div>
   </div>
   <div class="auth-side">
-    <div class="auth-mobile-brand">SABARKANTHA <b>/ VILLAGE INSIGHTS</b></div>
+    <div class="auth-mobile-brand">SABARKANTHA <b>/ District INSIGHTS</b></div>
     <div class="auth-card">
       <div class="auth-heading"><span class="eyebrow" id="auth-eyebrow">YOUR WORKSPACE</span><h2 id="auth-title">Welcome back.</h2><p id="auth-subtitle">Sign in, or explore the dataset as a guest.</p></div>
       <div class="auth-tabs" id="auth-tabs">
@@ -74,7 +74,7 @@
 
 <section id="app-screen" class="app-shell hidden">
   <aside class="sidebar">
-    <div class="side-brand"><svg class="brand-symbol" viewBox="0 0 32 32" aria-hidden="true"><path d="M16 3v26M3 16h26M6.8 6.8l18.4 18.4M25.2 6.8 6.8 25.2"/></svg><span>SABARKANTHA<small>VILLAGE INSIGHTS</small></span></div>
+    <div class="side-brand"><svg class="brand-symbol" viewBox="0 0 32 32" aria-hidden="true"><path d="M16 3v26M3 16h26M6.8 6.8l18.4 18.4M25.2 6.8 6.8 25.2"/></svg><span>SABARKANTHA<small>District INSIGHTS</small></span></div>
     <div class="workspace-label">WORKSPACE</div>
     <nav class="side-nav" aria-label="Dashboard pages">
       <button class="nav-item active" data-page="overview"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 4h7v7H4zM13 4h7v5h-7zM13 11h7v9h-7zM4 13h7v7H4z"/></svg>Overview</button>
@@ -107,7 +107,7 @@
     <div id="dashboard-loading" class="loading-line hidden" role="status" aria-live="polite">Updating results…</div>
 
     <section class="content" id="page-overview" aria-labelledby="overview-title">
-      <div class="page-intro"><div><div class="eyebrow">SABARKANTHA · {{ metadata.year }} SNAPSHOT</div><h1 id="overview-title">Village insights, <em>made clear.</em></h1><p>Explore the district’s simulated population, services and livelihoods.</p></div><span class="snapshot-mark">{{ metadata.year }}</span></div>
+      <div class="page-intro"><div><div class="eyebrow">SABARKANTHA · {{ metadata.year }} SNAPSHOT</div><h1 id="overview-title">District insights, <em>made clear.</em></h1><p>Explore the district’s simulated population, services and livelihoods.</p></div><span class="snapshot-mark">{{ metadata.year }}</span></div>
       <div class="notice"><span aria-hidden="true">i</span><div><b>Simulated demonstration data</b><p>These records are synthetic and are not official village statistics. Findings are descriptive and should not guide policy decisions.</p></div></div>
       <div class="kpi-grid overview-kpis">
         <article class="kpi-card"><div class="kpi-label">TOTAL POPULATION</div><div class="kpi-value" id="kpi-population">—</div><div class="kpi-foot">Year / taluka / village scope</div></article>
@@ -128,8 +128,8 @@
       <div class="section-head"><div><h2>Where people live</h2><p>Counts cover all selected villages and are not restricted by the crop filter.</p></div></div>
       <div class="chart-grid overview-charts">
         <article class="chart-card wide-chart"><div class="chart-head"><div><h3>Population by taluka</h3><p id="takeaway-population-taluka" class="chart-takeaway">Total people in each taluka</p></div></div><div class="chart-wrap"><canvas id="population-chart" role="img" aria-label="Population by taluka, people"></canvas></div></article>
-        <article class="chart-card"><div class="chart-head"><div><h3>10 most populous villages</h3><p id="takeaway-top-villages" class="chart-takeaway">Largest simulated village populations</p></div></div><div class="chart-wrap chart-wrap-tall"><canvas id="top-villages-chart" role="img" aria-label="Ten villages with the largest populations"></canvas></div></article>
-        <article class="chart-card"><div class="chart-head"><div><h3>10 least populous villages</h3><p id="takeaway-bottom-villages" class="chart-takeaway">Smallest simulated village populations</p></div></div><div class="chart-wrap chart-wrap-tall"><canvas id="bottom-villages-chart" role="img" aria-label="Ten villages with the smallest populations"></canvas></div></article>
+        <article class="chart-card"><div class="chart-head"><div><h3>Most populous talukas</h3><p id="takeaway-top-villages" class="chart-takeaway">Talukas ranked by total population</p></div></div><div class="chart-wrap chart-wrap-tall"><canvas id="top-villages-chart" role="img" aria-label="Talukas with the largest populations"></canvas></div></article>
+        <article class="chart-card"><div class="chart-head"><div><h3>Least populous talukas</h3><p id="takeaway-bottom-villages" class="chart-takeaway">Talukas ranked by total population</p></div></div><div class="chart-wrap chart-wrap-tall"><canvas id="bottom-villages-chart" role="img" aria-label="Talukas with the smallest populations"></canvas></div></article>
       </div>
     </section>
 
@@ -210,10 +210,10 @@
     </section>
 
     <section class="content hidden" id="page-about" aria-labelledby="about-title">
-      <div class="page-intro compact-intro"><div><div class="eyebrow">ABOUT THE PROJECT</div><h1 id="about-title">Sabarkantha Village Insights</h1><p>A student demonstration of data processing, comparison and accessible visualization.</p></div></div>
+      <div class="page-intro compact-intro"><div><div class="eyebrow">ABOUT THE PROJECT</div><h1 id="about-title">Sabarkantha District Insights</h1><p>A student demonstration of data processing, comparison and accessible visualization.</p></div></div>
       <div class="method-grid"><article class="method-card"><span class="method-number">PURPOSE</span><h3>Explore, compare, question</h3><p>Filter village-level records to inspect population, literacy, facilities, utilities, agriculture and employment.</p></article><article class="method-card"><span class="method-number">ACCESS</span><h3>Guest preview</h3><p>Open the dashboard without an account. Guest sessions can read, filter and export records but cannot change account data.</p></article><article class="method-card"><span class="method-number">GEOGRAPHY</span><h3>No boundary map</h3><p>The workbook includes illustrative point coordinates, not an official GeoJSON boundary set. A map would suggest more geographic accuracy than the source supports.</p></article></div>
     </section>
-    <footer class="main-footer"><span>SABARKANTHA VILLAGE INSIGHTS</span><span>Student data visualization demonstration</span></footer>
+    <footer class="main-footer"><span>SABARKANTHA District INSIGHTS</span><span>Student data visualization demonstration</span></footer>
   </main>
 </section>
 </body>

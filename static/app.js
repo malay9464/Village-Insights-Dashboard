@@ -289,10 +289,18 @@ function setLoading(loading){
 }
 
 function setTakeaways(data){
-  const k=data.kpis,topTaluka=data.population_by_taluka[0],topVillage=data.top_villages[0],bottomVillage=data.bottom_villages[0];
+  const k=data.kpis,allTalukas=$("#taluka-filter").value==="All";
+  const talukas=data.population_by_taluka||[];
+  const topTaluka=talukas[0],bottomTaluka=talukas.at(-1);
+  const topVillage=(data.top_villages||[])[0],bottomVillage=(data.bottom_villages||[])[0];
   setText("#takeaway-population-taluka",topTaluka?`${topTaluka.label} has the largest selected population (${fmtNumber(topTaluka.value)} people).`:"No population data matches this scope.");
-  setText("#takeaway-top-villages",topVillage?`${topVillage.village}, ${topVillage.taluka}: ${fmtNumber(topVillage.value)} people.`:"No matching villages.");
-  setText("#takeaway-bottom-villages",bottomVillage?`${bottomVillage.village}, ${bottomVillage.taluka}: ${fmtNumber(bottomVillage.value)} people.`:"No matching villages.");
+  if(allTalukas){
+    setText("#takeaway-top-villages",topTaluka?`${topTaluka.label}: ${fmtNumber(topTaluka.value)} people.`:"No talukas match these filters.");
+    setText("#takeaway-bottom-villages",bottomTaluka?`${bottomTaluka.label}: ${fmtNumber(bottomTaluka.value)} people.`:"No talukas match these filters.");
+  }else{
+    setText("#takeaway-top-villages",topVillage?`${topVillage.village}: ${fmtNumber(topVillage.value)} people in ${topVillage.taluka}.`:"No matching villages.");
+    setText("#takeaway-bottom-villages",bottomVillage?`${bottomVillage.village}: ${fmtNumber(bottomVillage.value)} people in ${bottomVillage.taluka}.`:"No matching villages.");
+  }
   setText("#takeaway-literacy-gender",`Women average ${fmtPercent(k.female_literacy)} vs men ${fmtPercent(k.male_literacy)}; gap ${fmtNumber(k.literacy_gap,1)} percentage points.`);
   const largestGap=[...data.gender_literacy_by_taluka].sort((a,b)=>b.gap-a.gap)[0];
   setText("#takeaway-literacy-gap",largestGap?`${largestGap.label} has the widest gap (${fmtNumber(largestGap.gap,1)} pp); district mean ${fmtNumber(k.literacy_gap,1)} pp.`:"No gap data.");
@@ -441,10 +449,19 @@ function renderHeatmap(rows){
 function renderCharts(data){
   const pop=labelsValues(data.population_by_taluka);
   makeChart("population-chart","bar",pop.labels,[{data:pop.values}],{horizontal:true,unit:"people"});
-  const top=data.top_villages||[];
-  makeChart("top-villages-chart","bar",top.map(row=>`${row.village} · ${row.taluka}`),[{data:top.map(row=>row.value),color:baseColor}],{horizontal:true,unit:"people"});
-  const bottom=data.bottom_villages||[];
-  makeChart("bottom-villages-chart","bar",bottom.map(row=>`${row.village} · ${row.taluka}`),[{data:bottom.map(row=>row.value),color:compareColor}],{horizontal:true,unit:"people"});
+  const allTalukas=$("#taluka-filter").value==="All";
+  const rankCards=$$("#top-villages-chart, #bottom-villages-chart").map(canvas=>canvas.closest(".chart-card"));
+  const [topTitle,bottomTitle]=allTalukas?["Most populous talukas","Least populous talukas"]:["10 most populous villages","10 least populous villages"];
+  rankCards.forEach((card,index)=>{const title=$("h3",card);if(title)title.textContent=index===0?topTitle:bottomTitle;});
+  const topCanvas=$("#top-villages-chart"),bottomCanvas=$("#bottom-villages-chart");
+  const topRows=allTalukas?(data.population_by_taluka||[]).slice(0,Math.ceil((data.population_by_taluka||[]).length/2)):(data.top_villages||[]);
+  const bottomRows=allTalukas?(data.population_by_taluka||[]).slice(Math.ceil((data.population_by_taluka||[]).length/2)).reverse():(data.bottom_villages||[]);
+  topCanvas.setAttribute("aria-label",allTalukas?"Talukas with the largest populations":"Villages with the largest populations in the selected taluka");
+  bottomCanvas.setAttribute("aria-label",allTalukas?"Talukas with the smallest populations":"Villages with the smallest populations in the selected taluka");
+  const topLabels=topRows.map(row=>allTalukas?row.label:`${row.village} · ${row.taluka}`);
+  makeChart("top-villages-chart","bar",topLabels,[{data:topRows.map(row=>row.value),color:baseColor}],{horizontal:true,unit:"people"});
+  const bottomLabels=bottomRows.map(row=>allTalukas?row.label:`${row.village} · ${row.taluka}`);
+  makeChart("bottom-villages-chart","bar",bottomLabels,[{data:bottomRows.map(row=>row.value),color:compareColor}],{horizontal:true,unit:"people"});
   const literacy=[...(data.gender_literacy_by_taluka||[])].sort((a,b)=>b.gap-a.gap);
   makeChart("gender-literacy-chart","bar",literacy.map(row=>row.label),[
     {label:"Male literacy",data:literacy.map(row=>row.male),color:baseColor},

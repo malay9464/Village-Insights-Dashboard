@@ -47,6 +47,12 @@ class AppTests(unittest.TestCase):
         overview = self.client.get("/api/dashboard?year=2024").get_json()
         self.assertEqual(overview["kpis"]["villages"], 3500)
         self.assertGreater(overview["kpis"]["population"], 0)
+        expected_talukas = project.DATA.groupby("Taluka")["Population_Total"].sum().sort_values(ascending=False)
+        self.assertEqual(overview["population_by_taluka"][0]["label"], expected_talukas.index[0])
+        taluka = expected_talukas.index[0]
+        scoped = self.client.get("/api/dashboard?taluka=" + taluka).get_json()
+        self.assertEqual(len(scoped["top_villages"]), 10)
+        self.assertTrue(all(row["taluka"] == taluka for row in scoped["top_villages"]))
         sample = filters["villages"][0]
         page = self.client.get("/api/villages?year=2024&village=" + sample).get_json()
         self.assertEqual(page["total"], 1)
