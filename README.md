@@ -19,7 +19,7 @@ The app can bind to the local network for a VS Code forwarded-port preview. For 
 
 ## Dashboard behavior
 
-- Start a read-only guest preview or create an account. Account passwords and generated recovery codes are stored as hashes. The recovery code appears once at signup and can be copied or downloaded.
+- Create an account with a Login ID, password, and one security question and answer. The chosen question and one-way hash of the normalized answer are stored in SQLite. Forgot-password recovery verifies that answer.
 - The dataset has only one reference year, so the year selector is removed.
 - Taluka and village filters apply to all summaries. Main crop applies only to agriculture and employment; demographic, education, and infrastructure metrics remain district/village measures independent of crop.
 - The overview shows population, household access, literacy, digital access, sex ratio, social-group shares, village size, utilities, and facility coverage. Additional pages cover education, infrastructure, agriculture, and employment.
@@ -36,6 +36,10 @@ All totals and rates are calculated from the selected workbook rows. District-wi
 ```powershell
 python -m unittest discover -s tests -v
 ```
+
+## Account database
+
+User accounts are stored in `instance/users.db` beside `app.py`. Open it with a SQLite viewer such as DB Browser for SQLite. The `users` table stores the login ID, password hash, security question key, and security-answer hash; it does not store the answer as readable text. On startup, older two-question databases are migrated by keeping the first question and removing the obsolete second-question and recovery-code columns. Older accounts without a security question are prompted to add one after they sign in.
 
 ## Project files
 

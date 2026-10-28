@@ -30,7 +30,7 @@
   <div class="auth-side">
     <div class="auth-mobile-brand">SABARKANTHA <b>/ District INSIGHTS</b></div>
     <div class="auth-card">
-      <div class="auth-heading"><span class="eyebrow" id="auth-eyebrow">YOUR WORKSPACE</span><h2 id="auth-title">Welcome back.</h2><p id="auth-subtitle">Sign in, or explore the dataset as a guest.</p></div>
+      <div class="auth-heading"><span class="eyebrow" id="auth-eyebrow">YOUR WORKSPACE</span><h2 id="auth-title">Welcome back.</h2><p id="auth-subtitle">Sign in to explore the district dataset.</p></div>
       <div class="auth-tabs" id="auth-tabs">
         <button class="auth-tab active" data-mode="login" type="button">Log in</button>
         <button class="auth-tab" data-mode="signup" type="button">Create account</button>
@@ -40,35 +40,38 @@
         <label for="login-password">Password</label><div class="password-control"><input id="login-password" name="password" type="password" placeholder="Enter your password" autocomplete="current-password" required aria-describedby="login-password-error"><button class="password-toggle" type="button" data-target="login-password" aria-label="Show password" aria-pressed="false">Show</button></div><small class="field-error hidden" id="login-password-error"></small>
         <button class="btn btn-primary btn-wide" type="submit">Log in <span aria-hidden="true">→</span></button>
         <button type="button" class="text-button" id="forgot-link">Forgot password?</button>
-        <div class="auth-divider"><span>or</span></div>
-        <button type="button" id="guest-button" class="btn btn-secondary btn-wide">Explore as a guest</button>
       </form>
       <form id="signup-form" class="auth-form hidden" novalidate>
         <label for="signup-name">Full name</label><input id="signup-name" name="full_name" placeholder="Your name" autocomplete="name" required aria-describedby="signup-name-error"><small class="field-error hidden" id="signup-name-error"></small>
         <label for="signup-username">Choose a Login ID</label><input id="signup-username" name="username" placeholder="3–24 letters, numbers, . _ -" autocomplete="username" required aria-describedby="signup-username-error"><small class="field-error hidden" id="signup-username-error"></small>
         <label for="signup-password">Password</label><div class="password-control"><input id="signup-password" name="password" type="password" minlength="8" placeholder="At least 8 characters" autocomplete="new-password" required aria-describedby="signup-password-error"><button class="password-toggle" type="button" data-target="signup-password" aria-label="Show password" aria-pressed="false">Show</button></div><small class="field-error hidden" id="signup-password-error"></small>
         <label for="signup-confirm">Confirm password</label><div class="password-control"><input id="signup-confirm" name="confirm_password" type="password" minlength="8" placeholder="Enter the same password again" autocomplete="new-password" required aria-describedby="signup-confirm_password-error"><button class="password-toggle" type="button" data-target="signup-confirm" aria-label="Show password" aria-pressed="false">Show</button></div><small class="field-error hidden" id="signup-confirm_password-error"></small>
-        <p class="field-note">A one-time recovery code will be generated after account creation. Save it securely.</p>
+        <label for="signup-question">Security question</label><select id="signup-question" name="security_question" required aria-describedby="signup-security_question-error"><option value="">Choose a question</option>{% for key, label in security_questions.items() %}<option value="{{ key }}">{{ label }}</option>{% endfor %}</select><small class="field-error hidden" id="signup-security_question-error"></small>
+        <label for="signup-answer">Your answer</label><input id="signup-answer" name="security_answer" autocomplete="off" required aria-describedby="signup-security_answer-error"><small class="field-error hidden" id="signup-security_answer-error"></small>
+        <p class="field-note">Remember your answer. It is case-insensitive and is used to reset your password.</p>
         <button class="btn btn-primary btn-wide" type="submit">Create account <span aria-hidden="true">→</span></button>
       </form>
       <form id="forgot-form" class="auth-form hidden" novalidate>
         <button type="button" class="back-button" id="back-login">← Back to login</button>
         <label for="forgot-username">Login ID</label><input id="forgot-username" name="username" autocomplete="username" required aria-describedby="forgot-username-error"><small class="field-error hidden" id="forgot-username-error"></small>
-        <label for="forgot-recovery">Recovery code</label><div class="password-control"><input id="forgot-recovery" name="recovery_code" type="password" autocomplete="off" required aria-describedby="forgot-recovery_code-error"><button class="password-toggle" type="button" data-target="forgot-recovery" aria-label="Show recovery code" aria-pressed="false">Show</button></div><small class="field-error hidden" id="forgot-recovery_code-error"></small>
+        <label for="forgot-question">Security question</label><select id="forgot-question" name="security_question" required aria-describedby="forgot-security_question-error"><option value="">Choose the question you registered</option>{% for key, label in security_questions.items() %}<option value="{{ key }}">{{ label }}</option>{% endfor %}</select><small class="field-error hidden" id="forgot-security_question-error"></small>
+        <label for="forgot-answer">Your answer</label><input id="forgot-answer" name="security_answer" autocomplete="off" required aria-describedby="forgot-security_answer-error"><small class="field-error hidden" id="forgot-security_answer-error"></small>
         <label for="forgot-new-password">New password</label><div class="password-control"><input id="forgot-new-password" name="new_password" type="password" minlength="8" autocomplete="new-password" required aria-describedby="forgot-new_password-error"><button class="password-toggle" type="button" data-target="forgot-new-password" aria-label="Show password" aria-pressed="false">Show</button></div><small class="field-error hidden" id="forgot-new_password-error"></small>
         <label for="forgot-confirm">Confirm new password</label><div class="password-control"><input id="forgot-confirm" name="confirm_password" type="password" minlength="8" autocomplete="new-password" required aria-describedby="forgot-confirm_password-error"><button class="password-toggle" type="button" data-target="forgot-confirm" aria-label="Show password" aria-pressed="false">Show</button></div><small class="field-error hidden" id="forgot-confirm_password-error"></small>
         <button class="btn btn-primary btn-wide" type="submit">Reset password <span aria-hidden="true">→</span></button>
       </form>
-      <div class="auth-bottom"><span class="status-dot"></span> Passwords and recovery codes are stored as hashes</div>
+      <div class="auth-bottom"><span class="status-dot"></span> Passwords and security answers are stored as hashes</div>
     </div>
   </div>
 </section>
 
-<dialog id="recovery-dialog" class="recovery-dialog" aria-labelledby="recovery-title">
-  <div class="recovery-dialog-inner"><div class="eyebrow">SAVE THIS CODE NOW</div><h2 id="recovery-title">Your recovery code</h2><p>This code is shown once. Store it somewhere private; it cannot be retrieved later.</p>
-    <code id="generated-recovery-code" class="recovery-code"></code>
-    <div class="recovery-actions"><button type="button" class="btn btn-secondary" id="copy-recovery">Copy code</button><button type="button" class="btn btn-secondary" id="download-recovery">Download code</button></div>
-    <button type="button" class="btn btn-primary btn-wide" id="recovery-continue">I saved my code</button>
+<dialog id="security-setup-dialog" class="security-setup-dialog" aria-labelledby="security-setup-title">
+  <div class="security-setup-inner"><span class="eyebrow">ACCOUNT SETUP</span><h2 id="security-setup-title">Add a password reset question</h2><p>This older account has no security question yet. Choose one now so you can reset your password later.</p>
+    <form id="security-setup-form" class="auth-form" novalidate>
+      <label for="setup-question">Security question</label><select id="setup-question" name="security_question" required aria-describedby="setup-security_question-error"><option value="">Choose a question</option>{% for key, label in security_questions.items() %}<option value="{{ key }}">{{ label }}</option>{% endfor %}</select><small class="field-error hidden" id="setup-security_question-error"></small>
+      <label for="setup-answer">Your answer</label><input id="setup-answer" name="security_answer" autocomplete="off" required aria-describedby="setup-security_answer-error"><small class="field-error hidden" id="setup-security_answer-error"></small>
+      <button class="btn btn-primary btn-wide" type="submit">Save security question</button>
+    </form>
   </div>
 </dialog>
 
@@ -86,7 +89,7 @@
       <button class="nav-item" data-page="about"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v18M3 12h18M5.6 5.6l12.8 12.8M18.4 5.6 5.6 18.4"/></svg>About</button>
     </nav>
     <div class="side-bottom">
-      <div class="user-chip"><div class="avatar" id="user-avatar">G</div><div><strong id="user-name">Guest</strong><span id="user-id">Read-only preview</span></div></div>
+      <div class="user-chip"><div class="avatar" id="user-avatar">U</div><div><strong id="user-name">User</strong><span id="user-id">@user</span></div></div>
       <button id="logout-btn" class="logout-btn">Log out</button>
       <div class="side-note">DATASET <b><span class="status-dot"></span> Loaded locally</b><small id="dataset-status">{{ "{:,}".format(metadata.records) }} rows · {{ metadata.fields }} fields</small></div>
     </div>
@@ -95,7 +98,7 @@
   <main class="main-area">
     <header class="topbar">
       <div><div class="breadcrumb">WORKSPACE <span>/</span> <b id="breadcrumb-page">OVERVIEW</b></div><div class="topbar-title" id="topbar-title">District overview</div></div>
-      <div class="top-actions"><span class="data-pill" id="snapshot-pill">{{ metadata.year }} snapshot</span><span class="guest-pill hidden" id="guest-pill">READ-ONLY GUEST</span><button class="filter-toggle" id="mobile-filter-toggle" type="button" aria-expanded="false">Filters</button></div>
+      <div class="top-actions"><span class="data-pill" id="snapshot-pill">{{ metadata.year }} snapshot</span><button class="filter-toggle" id="mobile-filter-toggle" type="button" aria-expanded="false">Filters</button></div>
     </header>
     <section class="filterbar" id="filterbar" aria-label="Dashboard filters">
       <div class="filter-heading"><span>FILTER VIEW</span><button id="reset-filters" type="button">Reset</button></div>
@@ -211,7 +214,7 @@
 
     <section class="content hidden" id="page-about" aria-labelledby="about-title">
       <div class="page-intro compact-intro"><div><div class="eyebrow">ABOUT THE PROJECT</div><h1 id="about-title">Sabarkantha District Insights</h1><p>A student demonstration of data processing, comparison and accessible visualization.</p></div></div>
-      <div class="method-grid"><article class="method-card"><span class="method-number">PURPOSE</span><h3>Explore, compare, question</h3><p>Filter village-level records to inspect population, literacy, facilities, utilities, agriculture and employment.</p></article><article class="method-card"><span class="method-number">ACCESS</span><h3>Guest preview</h3><p>Open the dashboard without an account. Guest sessions can read, filter and export records but cannot change account data.</p></article><article class="method-card"><span class="method-number">GEOGRAPHY</span><h3>No boundary map</h3><p>The workbook includes illustrative point coordinates, not an official GeoJSON boundary set. A map would suggest more geographic accuracy than the source supports.</p></article></div>
+      <div class="method-grid"><article class="method-card"><span class="method-number">PURPOSE</span><h3>Explore, compare, question</h3><p>Filter village-level records to inspect population, literacy, facilities, utilities, agriculture and employment.</p></article><article class="method-card"><span class="method-number">ACCESS</span><h3>Private account</h3><p>Sign in to view the dashboard. Account data is stored locally in the project’s SQLite database.</p></article><article class="method-card"><span class="method-number">GEOGRAPHY</span><h3>No boundary map</h3><p>The workbook includes illustrative point coordinates, not an official GeoJSON boundary set. A map would suggest more geographic accuracy than the source supports.</p></article></div>
     </section>
     <footer class="main-footer"><span>SABARKANTHA District INSIGHTS</span><span>Student data visualization demonstration</span></footer>
   </main>

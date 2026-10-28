@@ -1,5 +1,6 @@
 import csv
 import io
+import sqlite3
 import tempfile
 import unittest
 from pathlib import Path
@@ -22,9 +23,11 @@ class AppTests(unittest.TestCase):
         return self.client.post(path, json=payload, headers={"X-CSRF-Token": self.csrf})
 
     def signup_and_login(self):
-        response = self.post("/api/signup", {"full_name": "Test User", "username": "test_user", "password": "Password123", "confirm_password": "Password123"})
+        payload = {"full_name": "Test User", "username": "test_user", "password": "Password123", "confirm_password": "Password123",
+                   "security_question": "first_school", "security_answer": "Green Valley"}
+        response = self.post("/api/signup", payload)
         self.assertEqual(response.status_code, 200, response.get_json())
-        self.recovery_code = response.get_json()["recovery_code"]
+        self.security_answers = payload
         response = self.post("/api/login", {"username": "test_user", "password": "Password123"})
         self.assertEqual(response.status_code, 200, response.get_json())
         self.csrf = response.get_json()["csrf_token"]
@@ -32,12 +35,73 @@ class AppTests(unittest.TestCase):
     def test_auth_and_recovery(self):
         self.assertEqual(self.client.get("/api/dashboard").status_code, 401)
         self.signup_and_login()
-        duplicate = self.post("/api/signup", {"full_name": "Test User", "username": "TEST_USER", "password": "Password123", "confirm_password": "Password123"})
+        duplicate = self.post("/api/signup", {**self.security_answers, "username": "TEST_USER"})
         self.assertEqual(duplicate.status_code, 409)
         self.assertEqual(self.post("/api/logout", {}).status_code, 200)
         self.csrf = self.client.get("/api/session").get_json()["csrf_token"]
-        self.assertEqual(self.post("/api/forgot-password", {"username": "test_user", "recovery_code": self.recovery_code, "new_password": "NewPassword123", "confirm_password": "NewPassword123"}).status_code, 200)
+        recovery = {key: value for key, value in self.security_answers.items() if key.startswith("security_")}
+        recovery.update(username="test_user", new_password="NewPassword123", confirm_password="NewPassword123")
+        wrong = {**recovery, "security_answer": "Not the right answer"}
+        self.assertEqual(self.post("/api/forgot-password", wrong).status_code, 400)
+        recovery["security_answer"] = "green valley"
+        self.assertEqual(self.post("/api/forgot-password", recovery).status_code, 200)
         self.assertEqual(self.post("/api/login", {"username": "test_user", "password": "NewPassword123"}).status_code, 200)
+
+    def test_security_answer_is_hashed_in_database(self):
+        self.signup_and_login()
+        with project.db() as con:
+            user = con.execute("SELECT * FROM users WHERE username='test_user'").fetchone()
+        self.assertEqual(user["security_question"], "first_school")
+        self.assertNotEqual(user["security_answer_hash"], "Green Valley")
+        self.assertTrue(project.check_password_hash(user["security_answer_hash"], "green valley"))
+        self.assertNotIn("recovery_hash", user.keys())
+        self.assertNotIn("security_question_2", user.keys())
+
+    def test_existing_account_without_question_can_set_one_after_login(self):
+        with project.db() as con:
+            con.execute("INSERT INTO users (full_name, username, password_hash) VALUES (?, ?, ?)",
+                        ("Older User", "older_user", project.generate_password_hash("OldPassword123")))
+        login = self.post("/api/login", {"username": "older_user", "password": "OldPassword123"})
+        self.assertEqual(login.status_code, 200)
+        self.assertFalse(login.get_json()["security_question_set"])
+        self.csrf = login.get_json()["csrf_token"]
+        setup = self.post("/api/security-question", {"security_question": "first_school", "security_answer": "Green Valley"})
+        self.assertEqual(setup.status_code, 200, setup.get_json())
+        reset = self.post("/api/forgot-password", {"username": "older_user", "security_question": "first_school",
+                            "security_answer": "green valley", "new_password": "NewPassword123",
+                            "confirm_password": "NewPassword123"})
+        self.assertEqual(reset.status_code, 200, reset.get_json())
+
+    def test_two_question_accounts_migrate_to_first_question(self):
+        legacy_path = Path(self.temp.name) / "legacy.db"
+        with sqlite3.connect(legacy_path) as con:
+            con.execute("""CREATE TABLE users (
+                id INTEGER PRIMARY KEY AUTOINCREMENT, full_name TEXT NOT NULL,
+                username TEXT NOT NULL UNIQUE COLLATE NOCASE, password_hash TEXT NOT NULL,
+                recovery_hash TEXT NOT NULL, security_question_1 TEXT, security_answer_1_hash TEXT,
+                security_question_2 TEXT, security_answer_2_hash TEXT,
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)""")
+            con.execute("""INSERT INTO users (full_name, username, password_hash, recovery_hash, security_question_1,
+                         security_answer_1_hash, security_question_2, security_answer_2_hash)
+                         VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+                        ("Legacy User", "legacy_user", project.generate_password_hash("OldPassword123"),
+                         project.generate_password_hash("OldRecoveryCode"), "birth_city",
+                         project.generate_password_hash(project.normalize_security_answer("Ahmedabad")), "first_pet",
+                         project.generate_password_hash(project.normalize_security_answer("Milo"))))
+        original_path = project.app.config["DATABASE"]
+        project.app.config["DATABASE"] = str(legacy_path)
+        try:
+            project.init_db()
+            with project.db() as con:
+                columns = {row[1] for row in con.execute("PRAGMA table_info(users)")}
+            self.assertIn("security_question", columns)
+            self.assertNotIn("recovery_hash", columns)
+            self.assertNotIn("security_question_2", columns)
+            response = self.post("/api/forgot-password", {"username": "legacy_user", "security_question": "birth_city", "security_answer": "Ahmedabad",
+                                  "new_password": "NewLegacyPassword123", "confirm_password": "NewLegacyPassword123"})
+            self.assertEqual(response.status_code, 200, response.get_json())
+        finally:
+            project.app.config["DATABASE"] = original_path
 
     def test_dashboard_filters_paging_and_export(self):
         self.signup_and_login()
@@ -102,11 +166,10 @@ class AppTests(unittest.TestCase):
             self.assertEqual(response.status_code, 401)
         self.assertEqual(self.post("/api/login", {"username": "blocked-user", "password": "wrong"}).status_code, 429)
 
-    def test_guest_read_only_access_and_data_dictionary(self):
-        response = self.post("/api/guest", {})
-        self.assertEqual(response.status_code, 200)
-        self.csrf = response.get_json()["csrf_token"]
-        self.assertEqual(self.client.get("/api/dashboard").status_code, 200)
+    def test_guest_removed_and_data_dictionary_requires_login(self):
+        self.assertEqual(self.client.post("/api/guest").status_code, 404)
+        self.assertEqual(self.client.get("/api/dashboard").status_code, 401)
+        self.signup_and_login()
         dictionary = self.client.get("/api/data-dictionary.csv")
         self.assertEqual(dictionary.status_code, 200)
         self.assertEqual(dictionary.mimetype, "text/csv")
@@ -116,6 +179,10 @@ class AppTests(unittest.TestCase):
         home = self.client.get("/")
         self.assertEqual(home.status_code, 200)
         self.assertIn(b"Simulated", home.data)
+        self.assertNotIn(b"Explore as a guest", home.data)
+        self.assertNotIn(b"Guest preview", home.data)
+        self.assertIn(b"Security question", home.data)
+        self.assertNotIn(b"recovery code", home.data.lower())
         css = self.client.get("/static/styles.css")
         accessible_css = self.client.get("/static/accessibility.css")
         js = self.client.get("/static/app.js")

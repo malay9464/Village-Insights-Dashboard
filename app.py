@@ -7,6 +7,7 @@ import os
 import re
 import secrets
 import sqlite3
+from contextlib import contextmanager
 from datetime import datetime
 from functools import wraps
 from pathlib import Path
@@ -20,6 +21,19 @@ BASE_DIR = Path(__file__).resolve().parent
 INSTANCE_DIR = BASE_DIR / "instance"
 DATA_FILE = BASE_DIR / "sabarkantha_synthetic_visualization_2024_3500_records (2).xlsx"
 INSTANCE_DIR.mkdir(exist_ok=True)
+
+SECURITY_QUESTIONS = {
+    "first_school": "What was the name of your first school?",
+    "childhood_friend": "What was the first name of your childhood best friend?",
+    "first_pet": "What was the name of your first pet?",
+    "birth_city": "In what city were you born?",
+    "favorite_teacher": "What was the surname of a favorite teacher?",
+    "childhood_street": "What was the name of the street where you grew up?",
+}
+
+
+def normalize_security_answer(value):
+    return " ".join(str(value or "").strip().casefold().split())
 
 
 def persistent_secret():
@@ -41,11 +55,19 @@ app.config.update(
 )
 
 
+@contextmanager
 def db():
     Path(app.config["DATABASE"]).parent.mkdir(parents=True, exist_ok=True)
     con = sqlite3.connect(app.config["DATABASE"])
     con.row_factory = sqlite3.Row
-    return con
+    try:
+        yield con
+        con.commit()
+    except Exception:
+        con.rollback()
+        raise
+    finally:
+        con.close()
 
 
 def init_db():
@@ -55,9 +77,32 @@ def init_db():
             full_name TEXT NOT NULL,
             username TEXT NOT NULL UNIQUE COLLATE NOCASE,
             password_hash TEXT NOT NULL,
-            recovery_hash TEXT NOT NULL,
+            security_question TEXT,
+            security_answer_hash TEXT,
             created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
         )""")
+        columns = {row[1] for row in con.execute("PRAGMA table_info(users)")}
+        legacy_columns = {"recovery_hash", "security_question_1", "security_answer_1_hash", "security_question_2", "security_answer_2_hash"}
+        if not {"security_question", "security_answer_hash"}.issubset(columns) or columns.intersection(legacy_columns):
+            con.execute("ALTER TABLE users RENAME TO users_before_single_question_migration")
+            con.execute("""CREATE TABLE users (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                full_name TEXT NOT NULL,
+                username TEXT NOT NULL UNIQUE COLLATE NOCASE,
+                password_hash TEXT NOT NULL,
+                security_question TEXT,
+                security_answer_hash TEXT,
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+            )""")
+            old_columns = {row[1] for row in con.execute("PRAGMA table_info(users_before_single_question_migration)")}
+            old_rows = con.execute("SELECT * FROM users_before_single_question_migration").fetchall()
+            for old in old_rows:
+                question = old["security_question"] if "security_question" in old_columns else old["security_question_1"] if "security_question_1" in old_columns else None
+                answer_hash = old["security_answer_hash"] if "security_answer_hash" in old_columns else old["security_answer_1_hash"] if "security_answer_1_hash" in old_columns else None
+                con.execute("""INSERT INTO users (id, full_name, username, password_hash, security_question, security_answer_hash, created_at)
+                             VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                            (old["id"], old["full_name"], old["username"], old["password_hash"], question, answer_hash, old["created_at"]))
+            con.execute("DROP TABLE users_before_single_question_migration")
         con.execute("""CREATE TABLE IF NOT EXISTS auth_attempts (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             action TEXT NOT NULL,
@@ -157,8 +202,8 @@ DATA_DICTIONARY = dictionary_frame()
 def login_required(fn):
     @wraps(fn)
     def wrapped(*args, **kwargs):
-        if not (session.get("user_id") or session.get("guest")):
-            return jsonify(error="Please log in or continue as guest."), 401
+        if not session.get("user_id"):
+            return jsonify(error="Please log in to continue."), 401
         return fn(*args, **kwargs)
     return wrapped
 
@@ -384,7 +429,7 @@ def dashboard_payload(demo_raw, agri_raw):
 @app.get("/")
 def home():
     categories = sorted(set(FIELD_CATEGORIES.values()))
-    return render_template("index.html", metadata={
+    return render_template("index.html", security_questions=SECURITY_QUESTIONS, metadata={
         "records": len(DATA), "fields": len(DATA.columns), "categories": len(categories),
         "year": int(DATA["Year"].dropna().max()) if "Year" in DATA and DATA["Year"].notna().any() else "—",
     })
@@ -392,13 +437,20 @@ def home():
 
 @app.get("/api/session")
 def api_session():
+    if session.get("guest") and not session.get("user_id"):
+        session.clear()
     session.setdefault("csrf_token", secrets.token_urlsafe(32))
-    active = bool(session.get("user_id") or session.get("guest"))
+    active = bool(session.get("user_id"))
+    question_set = False
+    if active:
+        with db() as con:
+            user = con.execute("SELECT security_question, security_answer_hash FROM users WHERE id = ?", (session["user_id"],)).fetchone()
+        question_set = bool(user and user["security_question"] and user["security_answer_hash"])
     return jsonify(
         authenticated=active,
-        guest=bool(session.get("guest")),
-        user=session.get("full_name", "Guest" if session.get("guest") else None),
-        username=session.get("username", "readonly" if session.get("guest") else None),
+        user=session.get("full_name"),
+        username=session.get("username"),
+        security_question_set=question_set,
         csrf_token=session["csrf_token"],
     )
 
@@ -409,6 +461,8 @@ def signup():
     data = request.get_json(silent=True) or {}
     name, username = str(data.get("full_name", "")).strip(), str(data.get("username", "")).strip()
     password, confirm = str(data.get("password", "")), str(data.get("confirm_password", ""))
+    question = str(data.get("security_question", ""))
+    answer = normalize_security_answer(data.get("security_answer"))
     if len(name) < 2 or len(name) > 80:
         return jsonify(error="Name must be between 2 and 80 characters.", field="full_name"), 400
     if not re.fullmatch(r"[A-Za-z0-9_.-]{3,24}", username):
@@ -417,14 +471,17 @@ def signup():
         return jsonify(error="Password must contain 8–128 characters.", field="password"), 400
     if password != confirm:
         return jsonify(error="Passwords do not match.", field="confirm_password"), 400
-    recovery = secrets.token_urlsafe(12)
+    if question not in SECURITY_QUESTIONS:
+        return jsonify(error="Choose a security question.", field="security_question"), 400
+    if not 2 <= len(answer) <= 160:
+        return jsonify(error="Answer must contain 2–160 characters.", field="security_answer"), 400
     try:
         with db() as con:
-            con.execute("INSERT INTO users (full_name, username, password_hash, recovery_hash) VALUES (?, ?, ?, ?)",
-                        (name, username, generate_password_hash(password), generate_password_hash(recovery)))
+            con.execute("INSERT INTO users (full_name, username, password_hash, security_question, security_answer_hash) VALUES (?, ?, ?, ?, ?)",
+                        (name, username, generate_password_hash(password), question, generate_password_hash(answer)))
     except sqlite3.IntegrityError:
         return jsonify(error="That Login ID is already taken. Choose another.", field="username"), 409
-    return jsonify(message="Account created. Save your one-time recovery code before continuing.", recovery_code=recovery)
+    return jsonify(message="Account created. You can now sign in with your Login ID and password.")
 
 
 @app.post("/api/login")
@@ -443,23 +500,34 @@ def login():
     session.clear()
     session.permanent = True
     session.update(user_id=user["id"], full_name=user["full_name"], username=user["username"], csrf_token=secrets.token_urlsafe(32))
-    return jsonify(message="Welcome back.", user=user["full_name"], username=user["username"], csrf_token=session["csrf_token"])
+    return jsonify(message="Welcome back.", user=user["full_name"], username=user["username"],
+                   security_question_set=bool(user["security_question"] and user["security_answer_hash"]), csrf_token=session["csrf_token"])
 
 
-@app.post("/api/guest")
+@app.post("/api/security-question")
+@login_required
 @csrf_required
-def guest():
-    session.clear()
-    session.permanent = True
-    session.update(guest=True, csrf_token=secrets.token_urlsafe(32))
-    return jsonify(message="Guest preview started.", user="Guest", username="readonly", csrf_token=session["csrf_token"])
+def set_security_question():
+    data = request.get_json(silent=True) or {}
+    question = str(data.get("security_question", ""))
+    answer = normalize_security_answer(data.get("security_answer"))
+    if question not in SECURITY_QUESTIONS:
+        return jsonify(error="Choose a security question.", field="security_question"), 400
+    if not 2 <= len(answer) <= 160:
+        return jsonify(error="Answer must contain 2–160 characters.", field="security_answer"), 400
+    with db() as con:
+        con.execute("UPDATE users SET security_question = ?, security_answer_hash = ? WHERE id = ?",
+                    (question, generate_password_hash(answer), session["user_id"]))
+    return jsonify(message="Security question saved. You can now reset your password with this answer.")
 
 
 @app.post("/api/forgot-password")
 @csrf_required
 def forgot_password():
     data = request.get_json(silent=True) or {}
-    username, recovery = str(data.get("username", "")).strip(), str(data.get("recovery_code", "")).strip()
+    username = str(data.get("username", "")).strip()
+    question = str(data.get("security_question", ""))
+    answer = normalize_security_answer(data.get("security_answer"))
     password, confirm = str(data.get("new_password", "")), str(data.get("confirm_password", ""))
     if len(password) < 8 or len(password) > 128:
         return jsonify(error="New password must contain 8–128 characters.", field="new_password"), 400
@@ -469,9 +537,13 @@ def forgot_password():
         return jsonify(error="Too many recovery attempts. Wait 15 minutes and try again."), 429
     with db() as con:
         user = con.execute("SELECT * FROM users WHERE username = ? COLLATE NOCASE", (username,)).fetchone()
-    if not user or not check_password_hash(user["recovery_hash"], recovery):
+    if not user or not user["security_question"] or not user["security_answer_hash"]:
         record_auth_failure("recovery", username)
-        return jsonify(error="Login ID or recovery code is incorrect.", field="recovery_code"), 400
+        return jsonify(error="Login ID or security answers are incorrect.", field="username"), 400
+    answers_match = question == user["security_question"] and bool(answer) and check_password_hash(user["security_answer_hash"], answer)
+    if not answers_match:
+        record_auth_failure("recovery", username)
+        return jsonify(error="Login ID or security answer is incorrect.", field="security_answer"), 400
     with db() as con:
         con.execute("UPDATE users SET password_hash = ? WHERE id = ?", (generate_password_hash(password), user["id"]))
     clear_auth_failures("recovery", username)

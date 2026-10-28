@@ -40,6 +40,7 @@ function sessionExpired() {
   charts={};
   $("#app-screen").classList.add("hidden");
   $("#auth-screen").classList.remove("hidden");
+  if($("#security-setup-dialog").open)$("#security-setup-dialog").close();
   setAuthMode("login");
   toast("Your session expired. Please sign in again.",true);
 }
@@ -68,13 +69,13 @@ function setAuthMode(mode){
   $("#auth-tabs").classList.toggle("hidden",mode==="forgot");
   if(mode==="login"){
     $("#auth-eyebrow").textContent="YOUR WORKSPACE";$("#auth-title").textContent="Welcome back.";
-    $("#auth-subtitle").textContent="Sign in, or explore the synthetic dataset as a guest.";
+    $("#auth-subtitle").textContent="Sign in to explore the district dataset.";
   }else if(mode==="signup"){
     $("#auth-eyebrow").textContent="GET STARTED";$("#auth-title").textContent="Create your account.";
     $("#auth-subtitle").textContent="A private workspace for exploring the data.";
   }else{
     $("#auth-eyebrow").textContent="ACCOUNT RECOVERY";$("#auth-title").textContent="Reset your password.";
-    $("#auth-subtitle").textContent="Use the recovery code saved during registration.";
+    $("#auth-subtitle").textContent="Answer the security question you chose when you registered.";
   }
 }
 
@@ -105,11 +106,11 @@ function formBusy(form,busy,workingText="Working…"){
 $$(".auth-tab").forEach(button=>button.addEventListener("click",()=>setAuthMode(button.dataset.mode)));
 $("#forgot-link").addEventListener("click",()=>setAuthMode("forgot"));
 $("#back-login").addEventListener("click",()=>setAuthMode("login"));
-$$('input').forEach(input=>input.addEventListener("input",()=>{
+$$('input, select').forEach(input=>["input","change"].forEach(eventName=>input.addEventListener(eventName,()=>{
   input.removeAttribute("aria-invalid");
   const err=input.form?fieldErrorElement(input.form,input.name):null;
   if(err){err.textContent="";err.classList.add("hidden");}
-}));
+})));
 $("body").addEventListener("click",event=>{
   const button=event.target.closest(".password-toggle");if(!button)return;
   const input=$("#"+CSS.escape(button.dataset.target));if(!input)return;
@@ -121,24 +122,9 @@ $("#signup-form").addEventListener("submit",async event=>{
   event.preventDefault();const form=event.currentTarget;clearErrors(form);formBusy(form,true,"Creating account…");
   try{
     const result=await api("/api/signup",{method:"POST",body:JSON.stringify(Object.fromEntries(new FormData(form).entries()))});
-    form.reset();$("#generated-recovery-code").textContent=result.recovery_code;
-    $("#recovery-dialog").showModal();
+    form.reset();setAuthMode("login");toast(result.message);
   }catch(error){if(!error.expired)showFieldError(form,error.field,error.message);}
   finally{formBusy(form,false);}
-});
-$("#recovery-continue").addEventListener("click",()=>{
-  $("#recovery-dialog").close();$("#generated-recovery-code").textContent="";setAuthMode("login");
-  toast("Account created. Sign in with your new Login ID.");
-});
-$("#copy-recovery").addEventListener("click",async()=>{
-  const code=$("#generated-recovery-code").textContent;
-  try{await navigator.clipboard.writeText(code);toast("Recovery code copied.");}
-  catch{const range=document.createRange();range.selectNodeContents($("#generated-recovery-code"));const selection=getSelection();selection.removeAllRanges();selection.addRange(range);toast("Select and copy the highlighted recovery code.",true);}
-});
-$("#download-recovery").addEventListener("click",()=>{
-  const code=$("#generated-recovery-code").textContent;
-  const link=document.createElement("a");link.href=URL.createObjectURL(new Blob([`Sabarkantha Village Insights recovery code\n\n${code}\n\nKeep this code private. It is shown only once.\n`],{type:"text/plain"}));
-  link.download="sabarkantha-recovery-code.txt";link.click();URL.revokeObjectURL(link.href);toast("Recovery code downloaded.");
 });
 $("#login-form").addEventListener("submit",async event=>{
   event.preventDefault();const form=event.currentTarget;clearErrors(form);formBusy(form,true,"Signing in…");
@@ -146,16 +132,19 @@ $("#login-form").addEventListener("submit",async event=>{
   catch(error){if(!error.expired)showFieldError(form,error.field,error.message);}
   finally{formBusy(form,false);}
 });
-$("#guest-button").addEventListener("click",async event=>{
-  const button=event.currentTarget;button.disabled=true;
-  try{const user=await api("/api/guest",{method:"POST",body:"{}"});csrfToken=user.csrf_token||csrfToken;sessionActive=true;await enterApp({...user,guest:true});}
-  catch(error){toast(error.message,true);}
-  finally{button.disabled=false;}
-});
 $("#forgot-form").addEventListener("submit",async event=>{
   event.preventDefault();const form=event.currentTarget;clearErrors(form);formBusy(form,true,"Resetting…");
   try{const result=await api("/api/forgot-password",{method:"POST",body:JSON.stringify(Object.fromEntries(new FormData(form).entries()))});form.reset();setAuthMode("login");toast(result.message);}
   catch(error){if(!error.expired)showFieldError(form,error.field,error.message);}
+  finally{formBusy(form,false);}
+});
+$("#security-setup-dialog").addEventListener("cancel",event=>event.preventDefault());
+$("#security-setup-form").addEventListener("submit",async event=>{
+  event.preventDefault();const form=event.currentTarget;clearErrors(form);formBusy(form,true,"Saving…");
+  try{
+    const result=await api("/api/security-question",{method:"POST",body:JSON.stringify(Object.fromEntries(new FormData(form).entries()))});
+    form.reset();$("#security-setup-dialog").close();toast(result.message);
+  }catch(error){if(!error.expired)showFieldError(form,error.field,error.message);}
   finally{formBusy(form,false);}
 });
 
@@ -591,10 +580,10 @@ window.addEventListener("popstate",async()=>{
 
 async function enterApp(user){
   $("#auth-screen").classList.add("hidden");$("#app-screen").classList.remove("hidden");
-  setText("#user-name",user.user||"User");setText("#user-id",user.guest?"Read-only preview":`@${user.username||"user"}`);
+  setText("#user-name",user.user||"User");setText("#user-id",`@${user.username||"user"}`);
   setText("#user-avatar",(user.user||"U").trim().charAt(0).toUpperCase());
-  $("#guest-pill").classList.toggle("hidden",!user.guest);
   await loadFilters();await restoreFromUrl();await loadDashboard();
+  if(!user.security_question_set)$("#security-setup-dialog").showModal();
 }
 $("#logout-btn").addEventListener("click",async()=>{
   try{await api("/api/logout",{method:"POST",body:"{}"});}catch(error){}
@@ -615,7 +604,7 @@ async function boot(){
   startChartJs();
   try{
     const state=await api("/api/session");csrfToken=state.csrf_token||"";sessionActive=state.authenticated;
-    if(state.authenticated)await enterApp({user:state.user,username:state.username,guest:state.guest});
+    if(state.authenticated)await enterApp({user:state.user,username:state.username,security_question_set:state.security_question_set});
     else syncUrl(false);
   }catch(error){toast("Could not start the dashboard. Check that Flask is running and refresh.",true);}
 }
